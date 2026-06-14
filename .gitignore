@@ -34,3 +34,13 @@
 # Node / Vite
 web/node_modules/
 web/dist/
+
+# Build output
+resources/
+build/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+*.user

@@ -1,0 +1,3 @@
+add_executable(qmonacoeditor_example main.cpp)
+
+target_link_libraries(qmonacoeditor_example PRIVATE qmonacoeditor)
