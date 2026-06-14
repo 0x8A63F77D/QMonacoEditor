@@ -12,10 +12,15 @@
 #include <QStandardPaths>
 #include <QCryptographicHash>
 #include <QUrl>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(lcMonaco, "qmonacoeditor", QtWarningMsg)
 
 QMonacoEditor::QMonacoEditor(QWidget *parent)
     : QWidget(parent)
 {
+    Q_INIT_RESOURCE(qmonacoeditor);
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
@@ -50,6 +55,8 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
     });
 
     extractResources();
+    qCDebug(lcMonaco) << "Loading from:" << resourceDir();
+    qCDebug(lcMonaco) << "index.html exists:" << QFile::exists(resourceDir() + "/index.html");
     m_webView->setUrl(QUrl::fromLocalFile(resourceDir() + "/index.html"));
 }
 
@@ -87,7 +94,14 @@ QString QMonacoEditor::resourceDir() const {
 
 void QMonacoEditor::extractResources() {
     QString destDir = resourceDir();
+
+    QDirIterator check(":/qmonacoeditor", QDirIterator::Subdirectories);
+    int qrcCount = 0;
+    while (check.hasNext()) { check.next(); qrcCount++; }
+    qCDebug(lcMonaco) << "qrc resources:" << qrcCount << "files, target:" << destDir;
+
     if (QDir(destDir).exists()) {
+        qCDebug(lcMonaco) << "Resources already extracted, skipping";
         return;
     }
 

@@ -12,7 +12,7 @@ function initEditor(bridge: any): void {
     document.getElementById("editor-container")!,
     {
       value: "",
-      language: "javascript",
+      language: "cpp",
       theme: "vs-dark",
       automaticLayout: true,
     }
