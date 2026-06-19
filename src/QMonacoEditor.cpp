@@ -39,6 +39,9 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
             m_hasPendingText = false;
             m_pendingText.clear();
         }
+        emit m_bridge->requestSetLanguage(m_language);
+        emit m_bridge->requestSetTheme(m_theme);
+        emit m_bridge->requestSetReadOnly(m_readOnly);
         emit editorReady();
     });
 
@@ -77,6 +80,31 @@ void QMonacoEditor::getText(std::function<void(const QString &)> callback) {
     }
     m_getTextCallback = std::move(callback);
     emit m_bridge->requestGetText();
+}
+
+void QMonacoEditor::setLanguage(const QString &languageId) {
+    m_language = languageId;
+    if (m_ready) {
+        emit m_bridge->requestSetLanguage(languageId);
+    }
+}
+
+void QMonacoEditor::setTheme(const QString &themeId) {
+    m_theme = themeId;
+    if (m_ready) {
+        emit m_bridge->requestSetTheme(themeId);
+    }
+}
+
+void QMonacoEditor::setReadOnly(bool readOnly) {
+    m_readOnly = readOnly;
+    if (m_ready) {
+        emit m_bridge->requestSetReadOnly(readOnly);
+    }
+}
+
+bool QMonacoEditor::isReadOnly() const {
+    return m_readOnly;
 }
 
 QString QMonacoEditor::resourceDir() const {

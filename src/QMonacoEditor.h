@@ -18,6 +18,11 @@ public:
     void setText(const QString &text);
     void getText(std::function<void(const QString &)> callback);
 
+    void setLanguage(const QString &languageId);
+    void setTheme(const QString &themeId);
+    void setReadOnly(bool readOnly);
+    bool isReadOnly() const;
+
 signals:
     void editorReady();
     void textChanged(const QString &newText);
@@ -33,6 +38,9 @@ private:
     QString m_pendingText;
     bool m_hasPendingText = false;
     std::function<void(const QString &)> m_getTextCallback;
+    QString m_language = QStringLiteral("cpp");
+    QString m_theme = QStringLiteral("vs-dark");
+    bool m_readOnly = false;
 };
 
 #endif // QMONACOEDITOR_H
