@@ -13,6 +13,8 @@
 #include <QCryptographicHash>
 #include <QUrl>
 #include <QLoggingCategory>
+#include <QEventLoop>
+#include <QPointer>
 
 Q_LOGGING_CATEGORY(lcMonaco, "qmonacoeditor", QtWarningMsg)
 
@@ -34,14 +36,6 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
 
     connect(m_bridge, &MonacoBridge::editorReady, this, [this]() {
         m_ready = true;
-        if (m_hasPendingText) {
-            emit m_bridge->requestSetText(m_pendingText);
-            m_hasPendingText = false;
-            m_pendingText.clear();
-        }
-        emit m_bridge->requestSetLanguage(m_language);
-        emit m_bridge->requestSetTheme(m_theme);
-        emit m_bridge->requestSetReadOnly(m_readOnly);
         emit editorReady();
     });
 
@@ -49,24 +43,8 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
         emit textChanged(text);
     });
 
-    connect(m_bridge, &MonacoBridge::getTextResult, this, [this](const QString &text) {
-        if (m_getTextCallback) {
-            auto cb = std::move(m_getTextCallback);
-            m_getTextCallback = nullptr;
-            cb(text);
-        }
-    });
-
     connect(m_bridge, &MonacoBridge::cursorPositionChanged, this, [this](int line, int column) {
         emit cursorPositionChanged(line, column);
-    });
-
-    connect(m_bridge, &MonacoBridge::getCursorPositionResult, this, [this](int line, int column) {
-        if (m_getCursorCallback) {
-            auto cb = std::move(m_getCursorCallback);
-            m_getCursorCallback = nullptr;
-            cb(line, column);
-        }
     });
 
     extractResources();
@@ -78,45 +56,54 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
 QMonacoEditor::~QMonacoEditor() = default;
 
 void QMonacoEditor::setText(const QString &text) {
-    if (!m_ready) {
-        m_pendingText = text;
-        m_hasPendingText = true;
-        return;
+    if (m_ready) {
+        emit m_bridge->requestSetText(text);
     }
-    emit m_bridge->requestSetText(text);
 }
 
-void QMonacoEditor::getText(std::function<void(const QString &)> callback) {
+QVariant QMonacoEditor::evalJsSync(const QString &expr) const {
     if (!m_ready) {
-        return;
+        return {};
     }
-    m_getTextCallback = std::move(callback);
-    emit m_bridge->requestGetText();
+    QEventLoop loop;
+    QVariant result;
+    QPointer<const QMonacoEditor> guard(this);
+    m_webView->page()->runJavaScript(expr, [&loop, &result](const QVariant &value) {
+        result = value;
+        loop.quit();
+    });
+    loop.exec();
+    if (!guard) {
+        return {};
+    }
+    return result;
+}
+
+QString QMonacoEditor::text() const {
+    return evalJsSync(QStringLiteral("window.__monacoEditor.getValue()")).toString();
 }
 
 void QMonacoEditor::setLanguage(const QString &languageId) {
-    m_language = languageId;
     if (m_ready) {
         emit m_bridge->requestSetLanguage(languageId);
     }
 }
 
 void QMonacoEditor::setTheme(const QString &themeId) {
-    m_theme = themeId;
     if (m_ready) {
         emit m_bridge->requestSetTheme(themeId);
     }
 }
 
 void QMonacoEditor::setReadOnly(bool readOnly) {
-    m_readOnly = readOnly;
     if (m_ready) {
         emit m_bridge->requestSetReadOnly(readOnly);
     }
 }
 
 bool QMonacoEditor::isReadOnly() const {
-    return m_readOnly;
+    return evalJsSync(QStringLiteral(
+        "!!window.__monacoEditor.getRawOptions().readOnly")).toBool();
 }
 
 void QMonacoEditor::setCursorPosition(int line, int column) {
@@ -125,12 +112,12 @@ void QMonacoEditor::setCursorPosition(int line, int column) {
     }
 }
 
-void QMonacoEditor::getCursorPosition(std::function<void(int line, int column)> callback) {
-    if (!m_ready) {
-        return;
-    }
-    m_getCursorCallback = std::move(callback);
-    emit m_bridge->requestGetCursorPosition();
+int QMonacoEditor::cursorLine() const {
+    return evalJsSync(QStringLiteral("window.__monacoEditor.getPosition().lineNumber")).toInt();
+}
+
+int QMonacoEditor::cursorColumn() const {
+    return evalJsSync(QStringLiteral("window.__monacoEditor.getPosition().column")).toInt();
 }
 
 QString QMonacoEditor::resourceDir() const {

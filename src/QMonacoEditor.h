@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include <QString>
-#include <functional>
+#include <QVariant>
 
 class QWebEngineView;
 class QWebChannel;
@@ -16,7 +16,7 @@ public:
     ~QMonacoEditor();
 
     void setText(const QString &text);
-    void getText(std::function<void(const QString &)> callback);
+    QString text() const;
 
     void setLanguage(const QString &languageId);
     void setTheme(const QString &themeId);
@@ -24,7 +24,8 @@ public:
     bool isReadOnly() const;
 
     void setCursorPosition(int line, int column);
-    void getCursorPosition(std::function<void(int line, int column)> callback);
+    int cursorLine() const;
+    int cursorColumn() const;
 
 signals:
     void editorReady();
@@ -34,18 +35,12 @@ signals:
 private:
     void extractResources();
     QString resourceDir() const;
+    QVariant evalJsSync(const QString &expr) const;
 
     QWebEngineView *m_webView = nullptr;
     QWebChannel *m_channel = nullptr;
     MonacoBridge *m_bridge = nullptr;
     bool m_ready = false;
-    QString m_pendingText;
-    bool m_hasPendingText = false;
-    std::function<void(const QString &)> m_getTextCallback;
-    QString m_language = QStringLiteral("cpp");
-    QString m_theme = QStringLiteral("vs-dark");
-    bool m_readOnly = false;
-    std::function<void(int, int)> m_getCursorCallback;
 };
 
 #endif // QMONACOEDITOR_H

@@ -4,6 +4,7 @@ declare global {
   interface Window {
     QWebChannel: any;
     qt: { webChannelTransport: any };
+    __monacoEditor: monaco.editor.IStandaloneCodeEditor;
   }
 }
 
@@ -18,13 +19,11 @@ function initEditor(bridge: any): void {
     }
   );
 
+  // Exposed for synchronous reads from C++ via QWebEnginePage::runJavaScript.
+  window.__monacoEditor = editor;
+
   bridge.requestSetText.connect((text: string) => {
     editor.setValue(text);
-  });
-
-  bridge.requestGetText.connect(() => {
-    const value = editor.getValue();
-    bridge.onGetTextResult(value);
   });
 
   bridge.requestSetLanguage.connect((languageId: string) => {
@@ -45,13 +44,6 @@ function initEditor(bridge: any): void {
   bridge.requestSetCursorPosition.connect((line: number, column: number) => {
     editor.setPosition({ lineNumber: line, column: column });
     editor.focus();
-  });
-
-  bridge.requestGetCursorPosition.connect(() => {
-    const pos = editor.getPosition();
-    if (pos) {
-      bridge.onGetCursorPositionResult(pos.lineNumber, pos.column);
-    }
   });
 
   editor.onDidChangeCursorPosition((e: monaco.editor.ICursorPositionChangedEvent) => {

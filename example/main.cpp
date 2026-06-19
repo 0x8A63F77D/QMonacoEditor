@@ -80,9 +80,7 @@ int main(int argc, char *argv[]) {
     });
 
     QObject::connect(getTextBtn, &QPushButton::clicked, [editor]() {
-        editor->getText([](const QString &text) {
-            QMessageBox::information(nullptr, "Editor Content", text);
-        });
+        QMessageBox::information(nullptr, "Editor Content", editor->text());
     });
 
     QObject::connect(langCombo, &QComboBox::currentTextChanged, [editor](const QString &lang) {
