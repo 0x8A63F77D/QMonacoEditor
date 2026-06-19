@@ -7,5 +7,12 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets WebEngineWidgets WebChannel)
 
+option(QMONACO_BUILD_TESTS "Build QMonacoEditor tests" ON)
+
 add_subdirectory(src)
 add_subdirectory(example)
+
+if(QMONACO_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
