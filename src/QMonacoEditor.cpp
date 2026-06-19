@@ -57,6 +57,18 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
         }
     });
 
+    connect(m_bridge, &MonacoBridge::cursorPositionChanged, this, [this](int line, int column) {
+        emit cursorPositionChanged(line, column);
+    });
+
+    connect(m_bridge, &MonacoBridge::getCursorPositionResult, this, [this](int line, int column) {
+        if (m_getCursorCallback) {
+            auto cb = std::move(m_getCursorCallback);
+            m_getCursorCallback = nullptr;
+            cb(line, column);
+        }
+    });
+
     extractResources();
     qCDebug(lcMonaco) << "Loading from:" << resourceDir();
     qCDebug(lcMonaco) << "index.html exists:" << QFile::exists(resourceDir() + "/index.html");
@@ -105,6 +117,20 @@ void QMonacoEditor::setReadOnly(bool readOnly) {
 
 bool QMonacoEditor::isReadOnly() const {
     return m_readOnly;
+}
+
+void QMonacoEditor::setCursorPosition(int line, int column) {
+    if (m_ready) {
+        emit m_bridge->requestSetCursorPosition(line, column);
+    }
+}
+
+void QMonacoEditor::getCursorPosition(std::function<void(int line, int column)> callback) {
+    if (!m_ready) {
+        return;
+    }
+    m_getCursorCallback = std::move(callback);
+    emit m_bridge->requestGetCursorPosition();
 }
 
 QString QMonacoEditor::resourceDir() const {

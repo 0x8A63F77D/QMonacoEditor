@@ -23,9 +23,13 @@ public:
     void setReadOnly(bool readOnly);
     bool isReadOnly() const;
 
+    void setCursorPosition(int line, int column);
+    void getCursorPosition(std::function<void(int line, int column)> callback);
+
 signals:
     void editorReady();
     void textChanged(const QString &newText);
+    void cursorPositionChanged(int line, int column);
 
 private:
     void extractResources();
@@ -41,6 +45,7 @@ private:
     QString m_language = QStringLiteral("cpp");
     QString m_theme = QStringLiteral("vs-dark");
     bool m_readOnly = false;
+    std::function<void(int, int)> m_getCursorCallback;
 };
 
 #endif // QMONACOEDITOR_H
