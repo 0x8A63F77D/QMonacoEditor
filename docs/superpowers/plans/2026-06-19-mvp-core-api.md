@@ -1,5 +1,23 @@
 # MVP Core API Implementation Plan
 
+> ⚠️ **SUPERSEDED — historical record.** This plan was executed, but the read/getter API
+> design changed substantially during implementation. The descriptions below (callback
+> getters, JS→C++ result signals/slots, and C++-side state caching) do **not** match the
+> shipped code. They are kept as-is to preserve the planning history. For the final design see:
+> - `src/QMonacoEditor.h` — the actual public API
+> - memory `cpp-js-bridge-design.md` — the final architecture rationale
+>
+> **Key divergences from this plan:**
+> - **Getters are synchronous, not callback-based.** `getText(cb)` / `getCursorPosition(cb)`
+>   became `text()`, `cursorLine()`, `cursorColumn()` — blocking reads via `evalJsSync`
+>   (`runJavaScript` + nested `QEventLoop`). `isReadOnly()` reads live too.
+> - **No JS→C++ result round-trip.** `requestGetText`, `requestGetCursorPosition`,
+>   `onGetCursorPositionResult`, `getCursorPositionResult` were never shipped.
+> - **No C++-side state caching.** `m_language`/`m_theme`/`m_readOnly`/`m_pendingText` were
+>   removed; the editor (JS) is the single source of truth, consistency over convenience.
+> - **Setters are no-ops before `editorReady`** (no pending buffer); set initial state in the
+>   `editorReady` slot.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend QMonacoEditor with the remaining MVP API surface — language switching, theme switching, read-only mode, and cursor position — building on the validated QWebChannel bridge.

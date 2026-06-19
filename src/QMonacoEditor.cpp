@@ -65,8 +65,14 @@ QVariant QMonacoEditor::evalJsSync(const QString &expr) const {
     if (!m_ready) {
         return {};
     }
+    // runJavaScript is async-only (Chromium runs in a separate process), so we spin a
+    // nested event loop to turn it into a blocking read. The loop keeps the app
+    // responsive while waiting.
     QEventLoop loop;
     QVariant result;
+    // The nested loop can process events that delete this widget (e.g. the parent window
+    // closing) before runJavaScript's callback returns. QPointer goes null in that case,
+    // so we detect it and avoid touching a dangling `this`.
     QPointer<const QMonacoEditor> guard(this);
     m_webView->page()->runJavaScript(expr, [&loop, &result](const QVariant &value) {
         result = value;
