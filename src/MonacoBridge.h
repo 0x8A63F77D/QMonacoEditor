@@ -13,14 +13,23 @@ public slots:
     void onEditorReady();
     void onTextChanged(const QString &text);
     void onGetTextResult(const QString &text);
+    void onCursorPositionChanged(int line, int column);
+    void onGetCursorPositionResult(int line, int column);
 
 signals:
     void requestSetText(const QString &text);
     void requestGetText();
+    void requestSetLanguage(const QString &languageId);
+    void requestSetTheme(const QString &themeId);
+    void requestSetReadOnly(bool readOnly);
+    void requestSetCursorPosition(int line, int column);
+    void requestGetCursorPosition();
 
     void editorReady();
     void textChanged(const QString &text);
     void getTextResult(const QString &text);
+    void cursorPositionChanged(int line, int column);
+    void getCursorPositionResult(int line, int column);
 };
 
 #endif // MONACOBRIDGE_H

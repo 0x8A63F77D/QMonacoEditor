@@ -14,3 +14,11 @@ void MonacoBridge::onTextChanged(const QString &text) {
 void MonacoBridge::onGetTextResult(const QString &text) {
     emit getTextResult(text);
 }
+
+void MonacoBridge::onCursorPositionChanged(int line, int column) {
+    emit cursorPositionChanged(line, column);
+}
+
+void MonacoBridge::onGetCursorPositionResult(int line, int column) {
+    emit getCursorPositionResult(line, column);
+}
