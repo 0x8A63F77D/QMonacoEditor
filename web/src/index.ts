@@ -27,6 +27,37 @@ function initEditor(bridge: any): void {
     bridge.onGetTextResult(value);
   });
 
+  bridge.requestSetLanguage.connect((languageId: string) => {
+    const model = editor.getModel();
+    if (model) {
+      monaco.editor.setModelLanguage(model, languageId);
+    }
+  });
+
+  bridge.requestSetTheme.connect((themeId: string) => {
+    monaco.editor.setTheme(themeId);
+  });
+
+  bridge.requestSetReadOnly.connect((readOnly: boolean) => {
+    editor.updateOptions({ readOnly });
+  });
+
+  bridge.requestSetCursorPosition.connect((line: number, column: number) => {
+    editor.setPosition({ lineNumber: line, column: column });
+    editor.focus();
+  });
+
+  bridge.requestGetCursorPosition.connect(() => {
+    const pos = editor.getPosition();
+    if (pos) {
+      bridge.onGetCursorPositionResult(pos.lineNumber, pos.column);
+    }
+  });
+
+  editor.onDidChangeCursorPosition((e: monaco.editor.ICursorPositionChangedEvent) => {
+    bridge.onCursorPositionChanged(e.position.lineNumber, e.position.column);
+  });
+
   editor.onDidChangeModelContent(() => {
     const value = editor.getValue();
     bridge.onTextChanged(value);
