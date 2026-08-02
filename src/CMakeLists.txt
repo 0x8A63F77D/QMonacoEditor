@@ -26,11 +26,16 @@ set(GENERATE_QRC_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_qrc.cmake")
 #
 # Drop a cached extension-less hit first: find_program skips the search when the
 # cache variable is already set, so reconfiguring a build tree created before
-# this fix would otherwise keep the broken path.
+# this fix would otherwise keep the broken path. Only a value that genuinely
+# carries no executable suffix is discarded; the comparison is lower-cased
+# because Windows paths are case-insensitive and MATCHES is not, so an
+# explicitly configured NPM.CMD must survive.
 if(CMAKE_HOST_WIN32)
-    if(NPM_EXECUTABLE AND NOT NPM_EXECUTABLE MATCHES "\\.(cmd|bat|exe)$")
+    string(TOLOWER "${NPM_EXECUTABLE}" _npm_executable_lower)
+    if(NPM_EXECUTABLE AND NOT _npm_executable_lower MATCHES "\\.(cmd|bat|exe)$")
         unset(NPM_EXECUTABLE CACHE)
     endif()
+    unset(_npm_executable_lower)
     find_program(NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
 else()
     find_program(NPM_EXECUTABLE NAMES npm REQUIRED)
