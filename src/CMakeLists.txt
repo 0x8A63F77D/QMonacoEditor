@@ -17,15 +17,17 @@ set(GENERATE_QRC_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_qrc.cmake")
 # returns, every following command is skipped, and the batch still exits 0 --
 # leaving vite_build.stamp, the .qrc and qrc_*.cpp unbuilt (later C1083).
 #
-# The extra name is added only on Windows: find_program searches every directory
-# for the first name before trying the second, so on a host that merely has a
-# Windows Node.js directory on PATH (e.g. WSL) it would otherwise pick the
-# batch file over the native npm.
+# The extra name is added only on Windows hosts. npm runs on the machine that
+# performs the build, so the predicate is CMAKE_HOST_WIN32 (host system), not
+# WIN32 (target system) -- the two differ when cross-compiling. It matters
+# because find_program searches every directory for the first name before
+# trying the second, so a Unix host that merely has a Windows Node.js directory
+# on PATH (e.g. WSL) would otherwise pick the batch file over the native npm.
 #
 # Drop a cached extension-less hit first: find_program skips the search when the
 # cache variable is already set, so reconfiguring a build tree created before
 # this fix would otherwise keep the broken path.
-if(WIN32)
+if(CMAKE_HOST_WIN32)
     if(NPM_EXECUTABLE AND NOT NPM_EXECUTABLE MATCHES "\\.(cmd|bat|exe)$")
         unset(NPM_EXECUTABLE CACHE)
     endif()
