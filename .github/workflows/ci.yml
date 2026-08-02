@@ -23,15 +23,21 @@ jobs:
           modules: qtwebengine qtwebchannel qtpositioning
           cache: true
 
+      # Ninja instead of the default Visual Studio generator: MSBuild custom
+      # build steps invoke npm.cmd without `call`, which aborts the step
+      # ("cannot find the batch label - VCEnd") before the qrc outputs exist.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure
-        run: cmake -B build -S . -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+        run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build
 
       - name: Test
         working-directory: build
         env:
           # No GPU on CI runners; software rendering keeps QtWebEngine alive.
           QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
-        run: ctest -C Release --output-on-failure --timeout 300
+        run: ctest --output-on-failure --timeout 300
