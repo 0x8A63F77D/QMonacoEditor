@@ -55,6 +55,34 @@ add_subdirectory(QMonacoEditor)
 target_link_libraries(my_app PRIVATE qmonacoeditor)
 ```
 
+Or let CMake fetch it:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    QMonacoEditor
+    GIT_REPOSITORY https://github.com/0x8A63F77D/QMonacoEditor.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(QMonacoEditor)
+
+target_link_libraries(my_app PRIVATE qmonacoeditor)
+```
+
+Either way, this library's own tests and example app are not built — they
+default to off unless QMonacoEditor is the top-level project.
+
+Two things to keep in mind when consuming the library:
+
+- Node.js / npm must be on `PATH` when the *consuming* project is configured.
+  The Monaco frontend is bundled during the consumer's build, so a missing
+  `npm` aborts configuration.
+- Use a single-config generator such as Ninja. Consumer builds with the Visual
+  Studio (MSBuild) generator currently fail
+  ([#9](https://github.com/0x8A63F77D/QMonacoEditor/issues/9)).
+
+Then use the widget like any other `QWidget`:
+
 ```cpp
 #include <QApplication>
 #include "QMonacoEditor.h"
@@ -75,9 +103,6 @@ int main(int argc, char *argv[]) {
     return app.exec();
 }
 ```
-
-Consumption via CMake `FetchContent` is planned but not yet verified
-([#4](https://github.com/0x8A63F77D/QMonacoEditor/issues/4)).
 
 ## License
 
