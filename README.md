@@ -77,9 +77,8 @@ Two things to keep in mind when consuming the library:
 - Node.js / npm must be on `PATH` when the *consuming* project is configured.
   The Monaco frontend is bundled during the consumer's build, so a missing
   `npm` aborts configuration.
-- Use a single-config generator such as Ninja. Consumer builds with the Visual
-  Studio (MSBuild) generator currently fail
-  ([#9](https://github.com/0x8A63F77D/QMonacoEditor/issues/9)).
+- The Ninja and Visual Studio (MSBuild) generators are both exercised on
+  Windows; Ninja is additionally covered by CI.
 
 Then use the widget like any other `QWidget`:
 
