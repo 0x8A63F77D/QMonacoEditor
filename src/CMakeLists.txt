@@ -10,6 +10,29 @@ set(QRC_CPP "${CMAKE_CURRENT_BINARY_DIR}/qrc_qmonacoeditor.cpp")
 set(GENERATE_QRC_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_qrc.cmake")
 
 find_program(NPM_EXECUTABLE npm REQUIRED)
+
+# Which npm installation is used stays entirely up to find_program (PATH order,
+# platform rules, a user-supplied -DNPM_EXECUTABLE). The single invariant this
+# block enforces is how that one installation is *spelled* in the build command:
+# it must carry the .cmd suffix when it is a batch shim.
+#
+# Why: the Visual Studio (MSBuild) generator writes all commands of one
+# add_custom_command into a single batch file, and prefixes a command with
+# "call " only when it recognises a .bat/.cmd extension. Given the
+# extension-less "C:/Program Files/nodejs/npm" shim there is no "call", so
+# cmd.exe resolves it via PATHEXT to npm.cmd and *chains* to it: control never
+# returns, every following command is skipped, and the batch still exits 0 --
+# leaving vite_build.stamp, the .qrc and qrc_*.cpp unbuilt (later C1083).
+#
+# Appending .cmd to the path already found keeps the chosen installation intact
+# (no second search, no cache rewrite, so a build tree configured before this
+# fix is corrected on reconfigure too). CMAKE_HOST_WIN32, not WIN32: npm runs on
+# the machine performing the build, and the two differ when cross-compiling.
+set(NPM_COMMAND "${NPM_EXECUTABLE}")
+if(CMAKE_HOST_WIN32 AND EXISTS "${NPM_EXECUTABLE}.cmd")
+    set(NPM_COMMAND "${NPM_EXECUTABLE}.cmd")
+endif()
+
 find_program(QT_RCC_EXECUTABLE
     NAMES rcc
     HINTS "${Qt6_DIR}/../../../bin"
@@ -32,8 +55,8 @@ file(WRITE "${QRC_FILE}" "${QRC_CONTENT}")
 # --- Step 1: Build frontend ---
 add_custom_command(
     OUTPUT "${VITE_STAMP}"
-    COMMAND "${NPM_EXECUTABLE}" install
-    COMMAND "${NPM_EXECUTABLE}" run build
+    COMMAND "${NPM_COMMAND}" install
+    COMMAND "${NPM_COMMAND}" run build
     COMMAND ${CMAKE_COMMAND} -E touch "${VITE_STAMP}"
     WORKING_DIRECTORY "${WEB_DIR}"
     DEPENDS "${WEB_DIR}/package.json"
