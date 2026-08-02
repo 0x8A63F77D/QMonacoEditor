@@ -17,6 +17,13 @@ set(GENERATE_QRC_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_qrc.cmake")
 # returns, every following command is skipped, and the batch still exits 0 --
 # leaving vite_build.stamp, the .qrc and qrc_*.cpp unbuilt (later C1083).
 # npm.cmd does not exist on Linux/macOS, where "npm" is picked up as before.
+#
+# Drop a cached extension-less hit first: find_program skips the search when the
+# cache variable is already set, so reconfiguring a build tree created before
+# this fix would otherwise keep the broken path.
+if(WIN32 AND NPM_EXECUTABLE AND NOT NPM_EXECUTABLE MATCHES "\\.(cmd|bat|exe)$")
+    unset(NPM_EXECUTABLE CACHE)
+endif()
 find_program(NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
 find_program(QT_RCC_EXECUTABLE
     NAMES rcc
