@@ -1,6 +1,9 @@
 # --- Frontend build via npm/vite ---
-set(WEB_DIR "${CMAKE_SOURCE_DIR}/web")
-set(RESOURCES_DIR "${CMAKE_SOURCE_DIR}/resources")
+# CMAKE_CURRENT_SOURCE_DIR, not CMAKE_SOURCE_DIR: when consumed via
+# add_subdirectory/FetchContent the latter is the consumer's root, which would
+# break the frontend paths.
+set(WEB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../web")
+set(RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../resources")
 set(VITE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/vite_build.stamp")
 set(QRC_FILE "${CMAKE_CURRENT_BINARY_DIR}/qmonacoeditor.qrc")
 set(QRC_CPP "${CMAKE_CURRENT_BINARY_DIR}/qrc_qmonacoeditor.cpp")
