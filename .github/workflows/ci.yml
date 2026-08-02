@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: win64_msvc2022_64
+          modules: qtwebengine qtwebchannel qtpositioning
+          cache: true
+
+      # Ninja instead of the default Visual Studio generator: MSBuild custom
+      # build steps invoke npm.cmd without `call`, which aborts the step
+      # ("cannot find the batch label - VCEnd") before the qrc outputs exist.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        working-directory: build
+        env:
+          # No GPU on CI runners; software rendering keeps QtWebEngine alive.
+          QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+        run: ctest --output-on-failure --timeout 300
