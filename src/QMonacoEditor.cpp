@@ -15,6 +15,9 @@
 #include <QLoggingCategory>
 #include <QEventLoop>
 #include <QPointer>
+#include <QTimer>
+
+#include <memory>
 
 Q_LOGGING_CATEGORY(lcMonaco, "qmonacoeditor", QtWarningMsg)
 
@@ -68,25 +71,38 @@ QVariant QMonacoEditor::evalJsSync(const QString &expr) const {
     // runJavaScript is async-only (Chromium runs in a separate process), so we spin a
     // nested event loop to turn it into a blocking read. The loop keeps the app
     // responsive while waiting.
-    QEventLoop loop;
-    QVariant result;
+    //
+    // State lives on the heap and is shared with the callback: if we return early on
+    // timeout, a late-arriving callback must not touch dead stack frames.
+    struct EvalState {
+        QEventLoop loop;
+        QVariant result;
+    };
+    auto state = std::make_shared<EvalState>();
     // The nested loop can process events that delete this widget (e.g. the parent window
     // closing) before runJavaScript's callback returns. QPointer goes null in that case,
     // so we detect it and avoid touching a dangling `this`.
     QPointer<const QMonacoEditor> guard(this);
-    m_webView->page()->runJavaScript(expr, [&loop, &result](const QVariant &value) {
-        result = value;
-        loop.quit();
+    m_webView->page()->runJavaScript(expr, [state](const QVariant &value) {
+        state->result = value;
+        state->loop.quit();
     });
-    loop.exec();
+    // The callback never arrives if the render process dies or the page navigates away
+    // mid-flight; give up after 5s instead of hanging the caller forever. The loop is
+    // the connection context, so a fired timer after loop teardown is a no-op.
+    QTimer::singleShot(5000, &state->loop, &QEventLoop::quit);
+    state->loop.exec();
     if (!guard) {
         return {};
     }
-    return result;
+    return state->result;
 }
 
+// All getter expressions use optional chaining: if the page reloaded or crashed after
+// editorReady(), the JS globals vanish and the expression must yield undefined (mapped
+// to a default-constructed QVariant) instead of throwing.
 QString QMonacoEditor::text() const {
-    return evalJsSync(QStringLiteral("window.__monacoEditor.getValue()")).toString();
+    return evalJsSync(QStringLiteral("window.__monacoEditor?.getValue()")).toString();
 }
 
 void QMonacoEditor::setLanguage(const QString &languageId) {
@@ -118,7 +134,7 @@ QString QMonacoEditor::theme() const {
 
 bool QMonacoEditor::isReadOnly() const {
     return evalJsSync(QStringLiteral(
-        "!!window.__monacoEditor.getRawOptions().readOnly")).toBool();
+        "!!window.__monacoEditor?.getRawOptions()?.readOnly")).toBool();
 }
 
 void QMonacoEditor::setCursorPosition(int line, int column) {
@@ -128,14 +144,19 @@ void QMonacoEditor::setCursorPosition(int line, int column) {
 }
 
 int QMonacoEditor::cursorLine() const {
-    return evalJsSync(QStringLiteral("window.__monacoEditor.getPosition().lineNumber")).toInt();
+    return evalJsSync(QStringLiteral(
+        "window.__monacoEditor?.getPosition()?.lineNumber")).toInt();
 }
 
 int QMonacoEditor::cursorColumn() const {
-    return evalJsSync(QStringLiteral("window.__monacoEditor.getPosition().column")).toInt();
+    return evalJsSync(QStringLiteral(
+        "window.__monacoEditor?.getPosition()?.column")).toInt();
 }
 
 QString QMonacoEditor::resourceDir() const {
+    // The cache key is a hash of the resource *paths*, not contents. This is only
+    // correct because Vite emits content-hashed filenames: any frontend change renames
+    // a file, which changes the path list and thus the target directory.
     QByteArray hash;
     QDirIterator it(":/qmonacoeditor", QDirIterator::Subdirectories);
     QCryptographicHash hasher(QCryptographicHash::Md5);
@@ -149,15 +170,10 @@ QString QMonacoEditor::resourceDir() const {
 }
 
 void QMonacoEditor::extractResources() {
-    QString destDir = resourceDir();
-
-    QDirIterator check(":/qmonacoeditor", QDirIterator::Subdirectories);
-    int qrcCount = 0;
-    while (check.hasNext()) { check.next(); qrcCount++; }
-    qCDebug(lcMonaco) << "qrc resources:" << qrcCount << "files, target:" << destDir;
+    const QString destDir = resourceDir();
 
     if (QDir(destDir).exists()) {
-        qCDebug(lcMonaco) << "Resources already extracted, skipping";
+        qCDebug(lcMonaco) << "Resources already extracted at" << destDir;
         return;
     }
 
@@ -172,14 +188,20 @@ void QMonacoEditor::extractResources() {
         QString relativePath = srcPath.mid(QString(":/qmonacoeditor/").length());
         QString destPath = destDir + "/" + relativePath;
 
-        QDir().mkpath(QFileInfo(destPath).absolutePath());
+        // A failed extraction surfaces later as a blank editor, so make the root
+        // cause (full disk, permissions, ...) visible in the log instead of silent.
+        if (!QDir().mkpath(QFileInfo(destPath).absolutePath())) {
+            qCWarning(lcMonaco) << "Failed to create directory for" << destPath;
+            continue;
+        }
 
         QFile srcFile(srcPath);
-        if (srcFile.open(QIODevice::ReadOnly)) {
-            QFile destFile(destPath);
-            if (destFile.open(QIODevice::WriteOnly)) {
-                destFile.write(srcFile.readAll());
-            }
+        QFile destFile(destPath);
+        if (!srcFile.open(QIODevice::ReadOnly)
+            || !destFile.open(QIODevice::WriteOnly)
+            || destFile.write(srcFile.readAll()) < 0) {
+            qCWarning(lcMonaco) << "Failed to extract" << srcPath << "->" << destPath
+                                << destFile.errorString();
         }
     }
 }
