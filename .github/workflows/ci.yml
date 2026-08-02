@@ -23,9 +23,8 @@ jobs:
           modules: qtwebengine qtwebchannel qtpositioning
           cache: true
 
-      # Ninja instead of the default Visual Studio generator: MSBuild custom
-      # build steps invoke npm.cmd without `call`, which aborts the step
-      # ("cannot find the batch label - VCEnd") before the qrc outputs exist.
+      # Ninja rather than the default Visual Studio generator: single-config and
+      # faster on CI. The MSBuild generator is verified locally (see #9).
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
