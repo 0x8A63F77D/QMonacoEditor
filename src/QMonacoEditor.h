@@ -63,11 +63,27 @@ public:
     void setLanguage(const QString &languageId);
 
     /**
+     * @brief Returns the language id of the current model.
+     *
+     * Synchronous: blocks on a nested event loop until the editor replies.
+     * @return A Monaco language id (e.g. "cpp"), or an empty string before editorReady().
+     */
+    QString language() const;
+
+    /**
      * @brief Sets the editor color theme. Themes are global to all Monaco instances.
      * @param themeId One of "vs", "vs-dark", or "hc-black".
      * @note No-op if called before editorReady().
      */
     void setTheme(const QString &themeId);
+
+    /**
+     * @brief Returns the current editor theme id.
+     *
+     * Synchronous: blocks on a nested event loop until the editor replies.
+     * @return "vs", "vs-dark", or "hc-black"; empty string before editorReady().
+     */
+    QString theme() const;
 
     /**
      * @brief Toggles read-only mode.

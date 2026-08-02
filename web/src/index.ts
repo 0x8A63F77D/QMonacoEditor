@@ -5,6 +5,9 @@ declare global {
     QWebChannel: any;
     qt: { webChannelTransport: any };
     __monacoEditor: monaco.editor.IStandaloneCodeEditor;
+    // Monaco has no theme getter, so the last applied theme is tracked here for
+    // synchronous reads from C++.
+    __monacoTheme: string;
   }
 }
 
@@ -21,6 +24,7 @@ function initEditor(bridge: any): void {
 
   // Exposed for synchronous reads from C++ via QWebEnginePage::runJavaScript.
   window.__monacoEditor = editor;
+  window.__monacoTheme = "vs-dark";
 
   bridge.requestSetText.connect((text: string) => {
     editor.setValue(text);
@@ -35,6 +39,7 @@ function initEditor(bridge: any): void {
 
   bridge.requestSetTheme.connect((themeId: string) => {
     monaco.editor.setTheme(themeId);
+    window.__monacoTheme = themeId;
   });
 
   bridge.requestSetReadOnly.connect((readOnly: boolean) => {

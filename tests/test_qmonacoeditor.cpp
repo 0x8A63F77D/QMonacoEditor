@@ -23,7 +23,8 @@ private slots:
     void textChangedSignalEmitted();
     void readOnlyToggles();
     void cursorPositionRoundTrips();
-    void setLanguageAndThemeDoNotCrash();
+    void languageRoundTrips();
+    void themeRoundTrips();
 
 private:
     QMonacoEditor *m_editor = nullptr;
@@ -50,6 +51,8 @@ void TestQMonacoEditor::gettersReturnDefaultsBeforeReady() {
     // to default-constructed values and setters are no-ops (no crash, no hang).
     QMonacoEditor fresh;
     QCOMPARE(fresh.text(), QString());
+    QCOMPARE(fresh.language(), QString());
+    QCOMPARE(fresh.theme(), QString());
     QCOMPARE(fresh.isReadOnly(), false);
     QCOMPARE(fresh.cursorLine(), 0);
     QCOMPARE(fresh.cursorColumn(), 0);
@@ -96,18 +99,18 @@ void TestQMonacoEditor::cursorPositionRoundTrips() {
     QVERIFY(spy.count() >= 1);
 }
 
-void TestQMonacoEditor::setLanguageAndThemeDoNotCrash() {
-    // No public getter for language/theme, so assert these apply without
-    // disturbing observable state or crashing the round-trip.
-    const QString sample = QStringLiteral("print('hi')");
-    m_editor->setText(sample);
-    QTRY_COMPARE(m_editor->text(), sample);
-
+void TestQMonacoEditor::languageRoundTrips() {
+    // The frontend starts with "cpp" as the initial language.
+    QCOMPARE(m_editor->language(), QStringLiteral("cpp"));
     m_editor->setLanguage(QStringLiteral("python"));
-    m_editor->setTheme(QStringLiteral("vs"));
+    QTRY_COMPARE(m_editor->language(), QStringLiteral("python"));
+}
 
-    // Content survives a language/theme switch.
-    QTRY_COMPARE(m_editor->text(), sample);
+void TestQMonacoEditor::themeRoundTrips() {
+    // The frontend starts with "vs-dark" as the initial theme.
+    QCOMPARE(m_editor->theme(), QStringLiteral("vs-dark"));
+    m_editor->setTheme(QStringLiteral("vs"));
+    QTRY_COMPARE(m_editor->theme(), QStringLiteral("vs"));
 }
 
 QTEST_MAIN(TestQMonacoEditor)

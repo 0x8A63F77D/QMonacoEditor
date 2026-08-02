@@ -107,6 +107,15 @@ void QMonacoEditor::setReadOnly(bool readOnly) {
     }
 }
 
+QString QMonacoEditor::language() const {
+    return evalJsSync(QStringLiteral(
+        "window.__monacoEditor?.getModel()?.getLanguageId()")).toString();
+}
+
+QString QMonacoEditor::theme() const {
+    return evalJsSync(QStringLiteral("window.__monacoTheme")).toString();
+}
+
 bool QMonacoEditor::isReadOnly() const {
     return evalJsSync(QStringLiteral(
         "!!window.__monacoEditor.getRawOptions().readOnly")).toBool();
