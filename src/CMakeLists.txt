@@ -9,7 +9,15 @@ set(QRC_FILE "${CMAKE_CURRENT_BINARY_DIR}/qmonacoeditor.qrc")
 set(QRC_CPP "${CMAKE_CURRENT_BINARY_DIR}/qrc_qmonacoeditor.cpp")
 set(GENERATE_QRC_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_qrc.cmake")
 
-find_program(NPM_EXECUTABLE npm REQUIRED)
+# Prefer npm.cmd on Windows. The Visual Studio (MSBuild) generator writes all
+# commands of one add_custom_command into a single batch file, and prefixes a
+# command with "call " only when it recognises a .bat/.cmd extension. With the
+# extension-less "C:/Program Files/nodejs/npm" shim there is no "call", so
+# cmd.exe resolves it via PATHEXT to npm.cmd and *chains* to it: control never
+# returns, every following command is skipped, and the batch still exits 0 --
+# leaving vite_build.stamp, the .qrc and qrc_*.cpp unbuilt (later C1083).
+# npm.cmd does not exist on Linux/macOS, where "npm" is picked up as before.
+find_program(NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
 find_program(QT_RCC_EXECUTABLE
     NAMES rcc
     HINTS "${Qt6_DIR}/../../../bin"
