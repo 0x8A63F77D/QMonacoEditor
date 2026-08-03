@@ -9,6 +9,8 @@
 #include <QWebEngineView>
 #include <QWebEnginePage>
 
+#include <memory>
+
 #include "QMonacoEditor.h"
 
 /**
@@ -75,12 +77,17 @@ void TestShortcutPolicy::initTestCase() {
     m_undoAction = addAction("HostUndo", QKeySequence(QStringLiteral("Ctrl+Z")));
     m_saveAction = addAction("HostSave", QKeySequence(QStringLiteral("Ctrl+S")));
 
+    // Constructed before anything pumps the event loop: qWaitForWindowActive() below
+    // does, and QSignalSpy::wait() only sees emissions that happen after it exists, so
+    // an editorReady() delivered during activation would otherwise be missed.
+    QSignalSpy readySpy(m_editor, &QMonacoEditor::editorReady);
+
     m_window->resize(800, 600);
     m_window->show();
     QVERIFY2(QTest::qWaitForWindowActive(m_window), "window never became active");
 
-    QSignalSpy readySpy(m_editor, &QMonacoEditor::editorReady);
-    QVERIFY2(readySpy.wait(30000), "editorReady() did not fire within 30s");
+    QVERIFY2(readySpy.count() > 0 || readySpy.wait(30000),
+             "editorReady() did not fire within 30s");
 }
 
 void TestShortcutPolicy::cleanupTestCase() {
@@ -126,15 +133,22 @@ QVariant TestShortcutPolicy::evalJs(const QString &expr) const {
     if (!view) {
         return {};
     }
-    QEventLoop loop;
-    QVariant result;
-    view->page()->runJavaScript(expr, [&](const QVariant &value) {
-        result = value;
-        loop.quit();
+    // Heap-owned state, shared with the callback: on the timeout path below this
+    // function returns while the callback is still registered, and a late arrival must
+    // not write through references into a dead stack frame. Same reasoning as
+    // QMonacoEditor::evalJsSync().
+    struct EvalState {
+        QEventLoop loop;
+        QVariant result;
+    };
+    auto state = std::make_shared<EvalState>();
+    view->page()->runJavaScript(expr, [state](const QVariant &value) {
+        state->result = value;
+        state->loop.quit();
     });
-    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-    loop.exec();
-    return result;
+    QTimer::singleShot(5000, &state->loop, &QEventLoop::quit);
+    state->loop.exec();
+    return state->result;
 }
 
 bool TestShortcutPolicy::findWidgetVisible() const {
