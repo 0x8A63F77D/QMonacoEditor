@@ -28,6 +28,28 @@ Workers cannot load from `qrc:` URLs). C++ and JavaScript communicate over
 synchronous evaluations against the live editor, so the editor itself is the
 single source of truth.
 
+## Deployment size
+
+Qt WebEngine dominates the size of a deployed application, so it is worth
+knowing the numbers up front. Measured at commit `2c0a203` on Windows x64
+(Release, Qt 6.8.3, deployed with `windeployqt`):
+
+- **For an application that already ships Qt WebEngine**, the incremental cost
+  of this library is 4.0 MiB — QMonacoEditor's own code plus the embedded
+  Monaco assets, as linked into the example executable.
+- **For a standalone deployment**, the full `windeployqt` output of the example
+  app is 281.6 MiB across 136 files. Removing the software-OpenGL fallback, the
+  DevTools resource pack, and all locales except `en`/`zh-CN` brings it to
+  208.0 MiB; both deployments were verified to launch. Note that the
+  software-OpenGL fallback is what renders on machines without working GPU
+  drivers, so dropping it is a deployment-policy decision.
+- Qt WebEngine (`Qt6WebEngineCore.dll`, `QtWebEngineProcess.exe`, the Chromium
+  locale and resource data, and the software-OpenGL fallback) accounts for
+  80.0% of the full deployment.
+
+The per-file breakdown, the trimming details, and the commands used are in
+[issue #6](https://github.com/0x8A63F77D/QMonacoEditor/issues/6).
+
 ## Requirements
 
 - Qt 6 with the Widgets, WebEngineWidgets, and WebChannel modules
