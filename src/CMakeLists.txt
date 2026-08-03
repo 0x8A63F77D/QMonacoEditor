@@ -15,11 +15,43 @@ find_program(QT_RCC_EXECUTABLE
 
 # --- Script to generate qrc at build time ---
 file(WRITE "${GENERATE_QRC_SCRIPT}" [=[
+# Unpacking a prebuilt archive happens here rather than at configure time,
+# because this script runs on every build: replacing the archive is then picked
+# up by a plain `cmake --build`, and the decision rests on the archive's content
+# rather than on its timestamp (which may move backwards -- cp -p, a restored
+# artifact -- leaving a timestamp-based check satisfied).
+if(PREBUILT_ARCHIVE)
+    file(SHA256 "${PREBUILT_ARCHIVE}" ARCHIVE_HASH)
+    set(HASH_FILE "${RESOURCES_DIR}.sha256")
+    set(EXTRACTED_HASH "")
+    if(EXISTS "${HASH_FILE}")
+        file(READ "${HASH_FILE}" EXTRACTED_HASH)
+    endif()
+    if(NOT EXISTS "${RESOURCES_DIR}/index.html" OR NOT EXTRACTED_HASH STREQUAL ARCHIVE_HASH)
+        file(REMOVE_RECURSE "${RESOURCES_DIR}")
+        file(ARCHIVE_EXTRACT INPUT "${PREBUILT_ARCHIVE}" DESTINATION "${RESOURCES_DIR}")
+        file(WRITE "${HASH_FILE}" "${ARCHIVE_HASH}")
+    endif()
+endif()
+
 file(GLOB_RECURSE RESOURCE_FILES "${RESOURCES_DIR}/*")
 set(QRC_CONTENT "<RCC>\n  <qresource prefix=\"/qmonacoeditor\">\n")
 foreach(FILE ${RESOURCE_FILES})
     file(RELATIVE_PATH REL_PATH "${RESOURCES_DIR}" "${FILE}")
-    string(APPEND QRC_CONTENT "    <file alias=\"${REL_PATH}\">${FILE}</file>\n")
+    # A prebuilt bundle may sit anywhere the consumer likes, including a path
+    # holding XML metacharacters (D:/R&D/bundle); left as-is they make rcc
+    # reject the qrc as malformed. "&" is replaced first, so that the entities
+    # introduced afterwards are not escaped a second time.
+    set(ALIAS_XML "${REL_PATH}")
+    set(PATH_XML "${FILE}")
+    string(REPLACE "&" "&amp;" ALIAS_XML "${ALIAS_XML}")
+    string(REPLACE "<" "&lt;" ALIAS_XML "${ALIAS_XML}")
+    string(REPLACE ">" "&gt;" ALIAS_XML "${ALIAS_XML}")
+    string(REPLACE "\"" "&quot;" ALIAS_XML "${ALIAS_XML}")
+    string(REPLACE "&" "&amp;" PATH_XML "${PATH_XML}")
+    string(REPLACE "<" "&lt;" PATH_XML "${PATH_XML}")
+    string(REPLACE ">" "&gt;" PATH_XML "${PATH_XML}")
+    string(APPEND QRC_CONTENT "    <file alias=\"${ALIAS_XML}\">${PATH_XML}</file>\n")
 endforeach()
 string(APPEND QRC_CONTENT "  </qresource>\n</RCC>\n")
 # Written via a temporary and configure_file, which replaces the destination
@@ -56,27 +88,27 @@ if(QMONACO_PREBUILT_RESOURCES)
     if(IS_DIRECTORY "${PREBUILT_PATH}")
         set(RESOURCES_DIR "${PREBUILT_PATH}")
     elseif(EXISTS "${PREBUILT_PATH}")
-        # An archive, extracted into the build tree with the destination wiped
-        # first so a replaced archive cannot leave stale files behind.
         set(RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-resources")
+        set(PREBUILT_ARCHIVE "${PREBUILT_PATH}")
 
-        # Unpacking is a configure-time act, so a build alone would keep using a
-        # previously extracted payload even after the archive was swapped at the
-        # same path. Listing the archive here makes such a swap re-run configure,
-        # which is what gets it unpacked. (Timestamp-based, as all of CMake's
-        # configure dependencies are: replacing an archive with one whose
-        # timestamp is *older* than the last configure will not be noticed.)
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PREBUILT_PATH}")
-
-        # Keyed on content, so reconfiguring for an unrelated reason does not
-        # re-unpack the whole frontend.
-        file(SHA256 "${PREBUILT_PATH}" ARCHIVE_HASH)
-        if(NOT EXISTS "${RESOURCES_DIR}/index.html"
-           OR NOT "${QMONACO_EXTRACTED_ARCHIVE}" STREQUAL "${ARCHIVE_HASH}")
-            file(REMOVE_RECURSE "${RESOURCES_DIR}")
-            file(ARCHIVE_EXTRACT INPUT "${PREBUILT_PATH}" DESTINATION "${RESOURCES_DIR}")
-            set(QMONACO_EXTRACTED_ARCHIVE "${ARCHIVE_HASH}" CACHE INTERNAL
-                "SHA256 of the archive currently extracted into prebuilt-resources")
+        # Unpacked here only so the bundle can be validated below. Keeping it in
+        # step with the archive afterwards is the build's job: the same script
+        # runs on every build and re-unpacks whenever the archive's content hash
+        # differs from the one recorded beside the payload. That is what makes a
+        # replaced archive visible to a plain `cmake --build`, and what keeps the
+        # decision off the archive's timestamp.
+        execute_process(
+            COMMAND ${CMAKE_COMMAND}
+                "-DRESOURCES_DIR=${RESOURCES_DIR}"
+                "-DQRC_FILE=${QRC_FILE}"
+                "-DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}"
+                -P "${GENERATE_QRC_SCRIPT}"
+            RESULT_VARIABLE UNPACK_RESULT
+        )
+        if(NOT UNPACK_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "QMONACO_PREBUILT_RESOURCES: could not unpack the archive "
+                "'${PREBUILT_PATH}'.")
         endif()
     else()
         message(FATAL_ERROR
@@ -173,6 +205,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND}
         -DRESOURCES_DIR="${RESOURCES_DIR}"
         -DQRC_FILE="${QRC_FILE}"
+        -DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}
         -P "${GENERATE_QRC_SCRIPT}"
     DEPENDS ${QRC_INPUT_DEPENDS}
     COMMENT "Generating Qt resource file from frontend build output"

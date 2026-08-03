@@ -233,21 +233,29 @@ QString QMonacoEditor::resourceDir() const {
     // QMONACO_PREBUILT_RESOURCES carries no such guarantee, and a change
     // confined to a stable-named file -- index.html above all -- would leave the
     // key untouched and keep a previously extracted frontend in service.
-    QCryptographicHash hasher(QCryptographicHash::Md5);
-    QDirIterator it(":/qmonacoeditor", QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        const QString path = it.next();
-        hasher.addData(path.toUtf8());
-        // Directories, and anything unreadable, contribute their path only.
-        QFile file(path);
-        if (file.open(QIODevice::ReadOnly)) {
-            hasher.addData(&file);
+    // Computed once for the process. The payload is compiled into the binary, so
+    // it cannot change while the program runs, whereas the hash walks the whole
+    // frontend (~21 MB) -- and this is called more than once per editor, on the
+    // GUI thread. Function-local static initialisation is thread-safe.
+    static const QString cached = [] {
+        QCryptographicHash hasher(QCryptographicHash::Md5);
+        QDirIterator it(":/qmonacoeditor", QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            hasher.addData(path.toUtf8());
+            // Directories, and anything unreadable, contribute their path only.
+            QFile file(path);
+            if (file.open(QIODevice::ReadOnly)) {
+                hasher.addData(&file);
+            }
         }
-    }
-    const QByteArray hash = hasher.result().toHex().left(8);
+        const QByteArray hash = hasher.result().toHex().left(8);
 
-    return QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-           + "/qmonacoeditor/" + QString::fromLatin1(hash);
+        return QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+               + "/qmonacoeditor/" + QString::fromLatin1(hash);
+    }();
+
+    return cached;
 }
 
 void QMonacoEditor::extractResources() {
