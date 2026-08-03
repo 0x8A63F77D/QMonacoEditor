@@ -22,7 +22,13 @@ foreach(FILE ${RESOURCE_FILES})
     string(APPEND QRC_CONTENT "    <file alias=\"${REL_PATH}\">${FILE}</file>\n")
 endforeach()
 string(APPEND QRC_CONTENT "  </qresource>\n</RCC>\n")
-file(WRITE "${QRC_FILE}" "${QRC_CONTENT}")
+# Written via a temporary and configure_file, which replaces the destination
+# only when the content actually differs. That is what lets this script be run
+# unconditionally (see step 2) without re-running rcc and recompiling the
+# frontend on every build.
+file(WRITE "${QRC_FILE}.tmp" "${QRC_CONTENT}")
+configure_file("${QRC_FILE}.tmp" "${QRC_FILE}" COPYONLY)
+file(REMOVE "${QRC_FILE}.tmp")
 ]=])
 
 # --- Step 1: Obtain the frontend ---
@@ -53,25 +59,22 @@ if(QMONACO_PREBUILT_RESOURCES)
         # An archive, extracted into the build tree with the destination wiped
         # first so a replaced archive cannot leave stale files behind.
         set(RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-resources")
-        set(EXTRACT_STAMP "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-extract.stamp")
 
-        # Keyed on the archive's content, so an unchanged archive is not
-        # re-extracted on every reconfigure (which would rebuild the qrc and
-        # re-run rcc over the whole frontend each time).
+        # Unpacking is a configure-time act, so a build alone would keep using a
+        # previously extracted payload even after the archive was swapped at the
+        # same path. Listing the archive here makes such a swap re-run configure,
+        # which is what gets it unpacked. (Timestamp-based, as all of CMake's
+        # configure dependencies are: replacing an archive with one whose
+        # timestamp is *older* than the last configure will not be noticed.)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PREBUILT_PATH}")
+
+        # Keyed on content, so reconfiguring for an unrelated reason does not
+        # re-unpack the whole frontend.
         file(SHA256 "${PREBUILT_PATH}" ARCHIVE_HASH)
-        if(NOT EXISTS "${EXTRACT_STAMP}"
-           OR NOT EXISTS "${RESOURCES_DIR}/index.html"
+        if(NOT EXISTS "${RESOURCES_DIR}/index.html"
            OR NOT "${QMONACO_EXTRACTED_ARCHIVE}" STREQUAL "${ARCHIVE_HASH}")
             file(REMOVE_RECURSE "${RESOURCES_DIR}")
             file(ARCHIVE_EXTRACT INPUT "${PREBUILT_PATH}" DESTINATION "${RESOURCES_DIR}")
-
-            # Extraction restores the timestamps recorded in the archive, which
-            # may well predate a qrc generated here from an earlier bundle. The
-            # extracted files alone would then look up to date and the build
-            # would keep embedding the old frontend. This stamp is written now,
-            # so it is always newer than any such qrc, and it is what the qrc
-            # rule below actually keys on.
-            file(TOUCH "${EXTRACT_STAMP}")
             set(QMONACO_EXTRACTED_ARCHIVE "${ARCHIVE_HASH}" CACHE INTERNAL
                 "SHA256 of the archive currently extracted into prebuilt-resources")
         endif()
@@ -93,19 +96,14 @@ if(QMONACO_PREBUILT_RESOURCES)
             "not inside a wrapping directory.")
     endif()
 
-    # The payload exists already at configure time, so the qrc can depend on the
-    # files themselves rather than on a build step that produces them -- plus
-    # the extraction stamp, when there was one (see above).
-    #
-    # CONFIGURE_DEPENDS because the file set is not fixed: replacing a directory
-    # bundle in place with another vite build changes the hashed asset names.
-    # Without it the build keeps the old list and stops at "missing and no known
-    # rule to make it" for an asset that no longer exists; with it the changed
-    # file set re-runs configure, and the qrc is regenerated from the new one.
-    file(GLOB_RECURSE QRC_INPUT_DEPENDS CONFIGURE_DEPENDS "${RESOURCES_DIR}/*")
-    if(EXTRACT_STAMP)
-        list(APPEND QRC_INPUT_DEPENDS "${EXTRACT_STAMP}")
-    endif()
+    # Deliberately no file dependencies. The payload belongs to the consumer and
+    # can change under a live build tree; every attempt to detect that at
+    # configure time (a file list, CONFIGURE_DEPENDS, a content hash) had its own
+    # blind spot, and a stale file list additionally breaks the build outright
+    # once a globbed asset is renamed away. So the qrc rule below is instead made
+    # to run on every build and read the payload afresh -- see step 2.
+    set(QRC_INPUT_DEPENDS "")
+    set(QRC_ALWAYS_REGENERATE "${CMAKE_CURRENT_BINARY_DIR}/regenerate_qrc_always")
 
     message(STATUS "QMonacoEditor: using prebuilt frontend from ${RESOURCES_DIR} (npm not required)")
 else()
@@ -157,8 +155,21 @@ else()
 endif()
 
 # --- Step 2: Generate qrc from the frontend files ---
+# On the npm path the payload is produced by the build itself, so depending on
+# the vite stamp is enough. On the prebuilt path it is not: the payload is owned
+# by the consumer, who may swap it under an already-configured build tree, and
+# extraction restores whatever timestamps the archive carried. Rather than keep
+# guessing when that happened, this rule declares an extra output that is never
+# written (SYMBOLIC, so CMake knows not to expect it). The rule is therefore
+# permanently out of date and re-reads the payload on every build; the script
+# replaces the qrc only when the content differs, so rcc and the recompile below
+# still happen exactly when the frontend really changed.
+if(QMONACO_PREBUILT_RESOURCES)
+    set_source_files_properties("${QRC_ALWAYS_REGENERATE}" PROPERTIES SYMBOLIC TRUE)
+endif()
+
 add_custom_command(
-    OUTPUT "${QRC_FILE}"
+    OUTPUT "${QRC_FILE}" ${QRC_ALWAYS_REGENERATE}
     COMMAND ${CMAKE_COMMAND}
         -DRESOURCES_DIR="${RESOURCES_DIR}"
         -DQRC_FILE="${QRC_FILE}"

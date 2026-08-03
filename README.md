@@ -136,6 +136,12 @@ set(QMONACO_PREBUILT_RESOURCES "D:/bundles/qmonacoeditor-resources-v0.1.0.zip")
 FetchContent_MakeAvailable(QMonacoEditor)
 ```
 
+Because the bundle is yours and may change while a build tree already exists,
+the resource file is rebuilt from it on every build rather than only when a
+change is detected. Swapping a bundle in place is therefore picked up
+immediately, at the cost of a few seconds per incremental build; the default
+npm path is unaffected.
+
 Note that the bundle is tied to the release it ships with. When you fetch `main`
 or another commit, the frontend is not guaranteed to match the C++ side, so the
 npm build remains the supported path there.
