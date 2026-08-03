@@ -11,6 +11,18 @@ target_link_libraries(qmonacoeditor_tests PRIVATE
 
 add_test(NAME qmonacoeditor_tests COMMAND qmonacoeditor_tests)
 
+# --- Shortcut arbitration tests (host QActions vs. the embedded editor) ---
+add_executable(shortcutpolicy_tests test_shortcutpolicy.cpp)
+
+target_link_libraries(shortcutpolicy_tests PRIVATE
+    qmonacoeditor
+    Qt6::Test
+    Qt6::Widgets
+    Qt6::WebEngineWidgets
+)
+
+add_test(NAME shortcutpolicy_tests COMMAND shortcutpolicy_tests)
+
 # --- MonacoBridge unit tests (no WebEngine needed) ---
 add_executable(monacobridge_tests test_monacobridge.cpp)
 
