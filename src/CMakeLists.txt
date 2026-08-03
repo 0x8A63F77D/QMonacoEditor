@@ -50,12 +50,31 @@ if(QMONACO_PREBUILT_RESOURCES)
     if(IS_DIRECTORY "${PREBUILT_PATH}")
         set(RESOURCES_DIR "${PREBUILT_PATH}")
     elseif(EXISTS "${PREBUILT_PATH}")
-        # An archive. Extracted into the build tree, wiping the destination
-        # first: a replaced archive then cannot leave stale files behind, at
-        # the cost of re-extracting on every reconfigure.
+        # An archive, extracted into the build tree with the destination wiped
+        # first so a replaced archive cannot leave stale files behind.
         set(RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-resources")
-        file(REMOVE_RECURSE "${RESOURCES_DIR}")
-        file(ARCHIVE_EXTRACT INPUT "${PREBUILT_PATH}" DESTINATION "${RESOURCES_DIR}")
+        set(EXTRACT_STAMP "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-extract.stamp")
+
+        # Keyed on the archive's content, so an unchanged archive is not
+        # re-extracted on every reconfigure (which would rebuild the qrc and
+        # re-run rcc over the whole frontend each time).
+        file(SHA256 "${PREBUILT_PATH}" ARCHIVE_HASH)
+        if(NOT EXISTS "${EXTRACT_STAMP}"
+           OR NOT EXISTS "${RESOURCES_DIR}/index.html"
+           OR NOT "${QMONACO_EXTRACTED_ARCHIVE}" STREQUAL "${ARCHIVE_HASH}")
+            file(REMOVE_RECURSE "${RESOURCES_DIR}")
+            file(ARCHIVE_EXTRACT INPUT "${PREBUILT_PATH}" DESTINATION "${RESOURCES_DIR}")
+
+            # Extraction restores the timestamps recorded in the archive, which
+            # may well predate a qrc generated here from an earlier bundle. The
+            # extracted files alone would then look up to date and the build
+            # would keep embedding the old frontend. This stamp is written now,
+            # so it is always newer than any such qrc, and it is what the qrc
+            # rule below actually keys on.
+            file(TOUCH "${EXTRACT_STAMP}")
+            set(QMONACO_EXTRACTED_ARCHIVE "${ARCHIVE_HASH}" CACHE INTERNAL
+                "SHA256 of the archive currently extracted into prebuilt-resources")
+        endif()
     else()
         message(FATAL_ERROR
             "QMONACO_PREBUILT_RESOURCES points at '${PREBUILT_PATH}', which "
@@ -75,8 +94,12 @@ if(QMONACO_PREBUILT_RESOURCES)
     endif()
 
     # The payload exists already at configure time, so the qrc can depend on the
-    # files themselves rather than on a build step that produces them.
+    # files themselves rather than on a build step that produces them -- plus
+    # the extraction stamp, when there was one (see above).
     file(GLOB_RECURSE QRC_INPUT_DEPENDS "${RESOURCES_DIR}/*")
+    if(EXTRACT_STAMP)
+        list(APPEND QRC_INPUT_DEPENDS "${EXTRACT_STAMP}")
+    endif()
 
     message(STATUS "QMonacoEditor: using prebuilt frontend from ${RESOURCES_DIR} (npm not required)")
 else()

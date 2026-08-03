@@ -24,14 +24,20 @@ option(QMONACO_BUILD_EXAMPLE "Build QMonacoEditor example app" ${QMONACO_MASTER_
 # the Monaco frontend is taken from it verbatim -- no Node.js/npm is looked for
 # or invoked. Empty (the default) keeps the npm/vite build. See src/CMakeLists.txt.
 #
-# Guarded by NOT DEFINED rather than declared outright: set(CACHE) deletes any
-# normal variable of the same name, so an unconditional declaration would
-# silently discard a consumer's
-#     set(QMONACO_PREBUILT_RESOURCES "..." )   # before FetchContent_MakeAvailable
-# -- the idiomatic way to configure a subproject -- and quietly fall back to the
-# npm build. Skipping the declaration when the name is already defined (as a
-# normal variable, or as a cache entry from -D) keeps both routes working.
-if(NOT DEFINED QMONACO_PREBUILT_RESOURCES)
+# The condition distinguishes the two ways this name can already be set, which
+# want opposite treatment:
+#
+#  - a *normal* variable from consumer code, i.e.
+#        set(QMONACO_PREBUILT_RESOURCES "...")   # before FetchContent_MakeAvailable
+#    the idiomatic way to configure a subproject. Declaring the cache entry
+#    would delete it -- set(CACHE) removes the normal variable of the same name
+#    -- and quietly fall back to the npm build. So: leave it alone.
+#
+#  - a *cache* entry, including the UNINITIALIZED one that a plain
+#    -DQMONACO_PREBUILT_RESOURCES=... creates. Declaring it here is what gives
+#    that entry its PATH type, and typing it is what converts a relative
+#    command-line value into an absolute one. So: declare it.
+if(NOT DEFINED QMONACO_PREBUILT_RESOURCES OR DEFINED CACHE{QMONACO_PREBUILT_RESOURCES})
     set(QMONACO_PREBUILT_RESOURCES "" CACHE PATH
         "Prebuilt Monaco frontend bundle: absolute path to a directory holding index.html, or to an archive of one")
 endif()

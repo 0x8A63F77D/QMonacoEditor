@@ -42,10 +42,14 @@ jobs:
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           if [ "$EVENT_NAME" = "release" ]; then
-            echo "version=$TAG_NAME" >> "$GITHUB_OUTPUT"
+            raw="$TAG_NAME"
           else
-            echo "version=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            raw="dev-$(git rev-parse --short HEAD)"
           fi
+          # This becomes part of a filename, and a tag may legally contain "/"
+          # (release/v1.0) or other characters that would turn the archive name
+          # into a path into a directory that does not exist.
+          echo "version=${raw//[^A-Za-z0-9._-]/-}" >> "$GITHUB_OUTPUT"
 
       - name: Build frontend
         working-directory: web
