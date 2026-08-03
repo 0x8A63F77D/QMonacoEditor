@@ -24,23 +24,39 @@ option(QMONACO_BUILD_EXAMPLE "Build QMonacoEditor example app" ${QMONACO_MASTER_
 # the Monaco frontend is taken from it verbatim -- no Node.js/npm is looked for
 # or invoked. Empty (the default) keeps the npm/vite build. See src/CMakeLists.txt.
 #
-# The condition distinguishes the two ways this name can already be set, which
-# want opposite treatment:
+# Two rules have to hold at once here, and they pull against each other:
 #
-#  - a *normal* variable from consumer code, i.e.
-#        set(QMONACO_PREBUILT_RESOURCES "...")   # before FetchContent_MakeAvailable
-#    the idiomatic way to configure a subproject. Declaring the cache entry
-#    would delete it -- set(CACHE) removes the normal variable of the same name
-#    -- and quietly fall back to the npm build. So: leave it alone.
+#  1. The cache entry must always be declared with type PATH. Typing it is what
+#     turns a relative -DQMONACO_PREBUILT_RESOURCES=... into an absolute path
+#     (a bare -D creates an UNINITIALIZED entry, which is never converted), and
+#     it is what makes the option visible in cmake-gui.
+#  2. Declaring it must never change which bundle is used. set(CACHE) deletes a
+#     normal variable of the same name -- CMP0126's OLD behaviour, which a 3.19
+#     baseline selects -- and a consumer's
+#         set(QMONACO_PREBUILT_RESOURCES "...")  # before MakeAvailable
+#     is exactly such a normal variable. Losing it would silently swap in the
+#     cache value, or fall back to the npm build.
 #
-#  - a *cache* entry, including the UNINITIALIZED one that a plain
-#    -DQMONACO_PREBUILT_RESOURCES=... creates. Declaring it here is what gives
-#    that entry its PATH type, and typing it is what converts a relative
-#    command-line value into an absolute one. So: declare it.
-if(NOT DEFINED QMONACO_PREBUILT_RESOURCES OR DEFINED CACHE{QMONACO_PREBUILT_RESOURCES})
-    set(QMONACO_PREBUILT_RESOURCES "" CACHE PATH
-        "Prebuilt Monaco frontend bundle: absolute path to a directory holding index.html, or to an archive of one")
+# So the declaration is unconditional, and the normal binding is captured before
+# it and restored after, leaving that binding its usual precedence over the
+# cache. A normal variable is detectable only by its value differing from the
+# cache entry's -- when they agree there is nothing to preserve anyway.
+set(QMONACO_REQUESTED_BUNDLE "${QMONACO_PREBUILT_RESOURCES}")
+set(QMONACO_BUNDLE_FROM_NORMAL_VAR FALSE)
+if(DEFINED QMONACO_PREBUILT_RESOURCES
+   AND (NOT DEFINED CACHE{QMONACO_PREBUILT_RESOURCES}
+        OR NOT "${QMONACO_REQUESTED_BUNDLE}" STREQUAL "$CACHE{QMONACO_PREBUILT_RESOURCES}"))
+    set(QMONACO_BUNDLE_FROM_NORMAL_VAR TRUE)
 endif()
+
+set(QMONACO_PREBUILT_RESOURCES "" CACHE PATH
+    "Prebuilt Monaco frontend bundle: absolute path to a directory holding index.html, or to an archive of one")
+
+if(QMONACO_BUNDLE_FROM_NORMAL_VAR)
+    set(QMONACO_PREBUILT_RESOURCES "${QMONACO_REQUESTED_BUNDLE}")
+endif()
+unset(QMONACO_REQUESTED_BUNDLE)
+unset(QMONACO_BUNDLE_FROM_NORMAL_VAR)
 
 add_subdirectory(src)
 

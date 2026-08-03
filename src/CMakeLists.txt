@@ -96,7 +96,13 @@ if(QMONACO_PREBUILT_RESOURCES)
     # The payload exists already at configure time, so the qrc can depend on the
     # files themselves rather than on a build step that produces them -- plus
     # the extraction stamp, when there was one (see above).
-    file(GLOB_RECURSE QRC_INPUT_DEPENDS "${RESOURCES_DIR}/*")
+    #
+    # CONFIGURE_DEPENDS because the file set is not fixed: replacing a directory
+    # bundle in place with another vite build changes the hashed asset names.
+    # Without it the build keeps the old list and stops at "missing and no known
+    # rule to make it" for an asset that no longer exists; with it the changed
+    # file set re-runs configure, and the qrc is regenerated from the new one.
+    file(GLOB_RECURSE QRC_INPUT_DEPENDS CONFIGURE_DEPENDS "${RESOURCES_DIR}/*")
     if(EXTRACT_STAMP)
         list(APPEND QRC_INPUT_DEPENDS "${EXTRACT_STAMP}")
     endif()
