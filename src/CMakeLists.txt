@@ -34,6 +34,20 @@ if(PREBUILT_ARCHIVE)
     endif()
 endif()
 
+# Validated here rather than only at configure time, because the payload can be
+# replaced after configuration: an archive swapped for a malformed one is
+# unpacked above, and without this the build would happily emit a qrc with no
+# entry point and produce a library whose editors come up blank.
+if(NOT EXISTS "${RESOURCES_DIR}/index.html")
+    message(FATAL_ERROR
+        "QMONACO_PREBUILT_RESOURCES: no index.html in '${RESOURCES_DIR}'. "
+        "Expected a QMonacoEditor frontend bundle -- either the directory "
+        "produced by 'npm run build' in web/ (this repository's resources/ "
+        "directory), or the qmonacoeditor-resources-<version>.zip asset of a "
+        "GitHub release. Archive contents must sit at the archive root, not "
+        "inside a wrapping directory.")
+endif()
+
 file(GLOB_RECURSE RESOURCE_FILES "${RESOURCES_DIR}/*")
 set(QRC_CONTENT "<RCC>\n  <qresource prefix=\"/qmonacoeditor\">\n")
 foreach(FILE ${RESOURCE_FILES})
@@ -90,42 +104,29 @@ if(QMONACO_PREBUILT_RESOURCES)
     elseif(EXISTS "${PREBUILT_PATH}")
         set(RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-resources")
         set(PREBUILT_ARCHIVE "${PREBUILT_PATH}")
-
-        # Unpacked here only so the bundle can be validated below. Keeping it in
-        # step with the archive afterwards is the build's job: the same script
-        # runs on every build and re-unpacks whenever the archive's content hash
-        # differs from the one recorded beside the payload. That is what makes a
-        # replaced archive visible to a plain `cmake --build`, and what keeps the
-        # decision off the archive's timestamp.
-        execute_process(
-            COMMAND ${CMAKE_COMMAND}
-                "-DRESOURCES_DIR=${RESOURCES_DIR}"
-                "-DQRC_FILE=${QRC_FILE}"
-                "-DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}"
-                -P "${GENERATE_QRC_SCRIPT}"
-            RESULT_VARIABLE UNPACK_RESULT
-        )
-        if(NOT UNPACK_RESULT EQUAL 0)
-            message(FATAL_ERROR
-                "QMONACO_PREBUILT_RESOURCES: could not unpack the archive "
-                "'${PREBUILT_PATH}'.")
-        endif()
     else()
         message(FATAL_ERROR
             "QMONACO_PREBUILT_RESOURCES points at '${PREBUILT_PATH}', which "
             "does not exist.")
     endif()
 
-    # index.html is the entry point QMonacoEditor loads at runtime; without it
-    # the bundle is not a frontend build, whatever else it contains.
-    if(NOT EXISTS "${RESOURCES_DIR}/index.html")
+    # Run once now what the build runs every time: unpack the archive if there is
+    # one, and validate the payload. Failing at configuration is what turns a bad
+    # bundle into an immediate, explained error rather than a library that builds
+    # cleanly and shows a blank editor. The script owns the check, so it is
+    # enforced on every later build too, when the payload may have been replaced.
+    execute_process(
+        COMMAND ${CMAKE_COMMAND}
+            "-DRESOURCES_DIR=${RESOURCES_DIR}"
+            "-DQRC_FILE=${QRC_FILE}"
+            "-DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}"
+            -P "${GENERATE_QRC_SCRIPT}"
+        RESULT_VARIABLE PREPARE_RESULT
+    )
+    if(NOT PREPARE_RESULT EQUAL 0)
         message(FATAL_ERROR
-            "QMONACO_PREBUILT_RESOURCES: no index.html in '${RESOURCES_DIR}'. "
-            "Expected a QMonacoEditor frontend bundle -- either the directory "
-            "produced by 'npm run build' in web/ (this repository's resources/ "
-            "directory), or the qmonacoeditor-resources-<version>.zip asset of "
-            "a GitHub release. Archive contents must sit at the archive root, "
-            "not inside a wrapping directory.")
+            "QMONACO_PREBUILT_RESOURCES: '${PREBUILT_PATH}' is not a usable "
+            "frontend bundle -- see the message above.")
     endif()
 
     # Deliberately no file dependencies. The payload belongs to the consumer and
@@ -203,11 +204,15 @@ endif()
 add_custom_command(
     OUTPUT "${QRC_FILE}" ${QRC_ALWAYS_REGENERATE}
     COMMAND ${CMAKE_COMMAND}
-        -DRESOURCES_DIR="${RESOURCES_DIR}"
-        -DQRC_FILE="${QRC_FILE}"
-        -DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}
+        "-DRESOURCES_DIR=${RESOURCES_DIR}"
+        "-DQRC_FILE=${QRC_FILE}"
+        "-DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}"
         -P "${GENERATE_QRC_SCRIPT}"
     DEPENDS ${QRC_INPUT_DEPENDS}
+    # VERBATIM, so CMake escapes these arguments for the native shell instead of
+    # the quoting being hand-rolled: a bundle path may hold characters the shell
+    # would otherwise act on (D:/R&D/bundle.zip, where "&" ends the command).
+    VERBATIM
     COMMENT "Generating Qt resource file from frontend build output"
 )
 
