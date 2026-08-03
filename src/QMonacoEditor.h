@@ -31,6 +31,32 @@ class QMonacoEditor : public QWidget {
     Q_OBJECT
 public:
     /**
+     * @brief Who wins when a host QAction and the embedded editor claim the same chord.
+     *
+     * Qt asks the focused widget chain (via QEvent::ShortcutOverride) whether it wants a
+     * chord before triggering the matching QAction. By default the web view claims only
+     * what Qt considers a *text-editing* key (undo, redo, cut/copy/paste, select-all, the
+     * move/select family, ...), so every other Monaco binding -- Ctrl+F, Ctrl+H, Ctrl+D,
+     * Ctrl+/, F12 ... -- silently loses to a host QAction on the same chord. This enum
+     * overrides that split.
+     *
+     * @note Qt::ShortcutContext has no influence on this arbitration; it only decides
+     *       whether a QAction is a candidate at all.
+     */
+    enum class ShortcutPolicy {
+        /// Qt's built-in behaviour, unchanged: the editor keeps text-editing chords,
+        /// the host wins everything else. The default, so existing code is unaffected.
+        QtDefault,
+        /// Host QActions always win: no chord that matches one is delivered to the editor.
+        HostShortcutsWin,
+        /// The editor gets first refusal on every chord. Chords Monaco does not bind
+        /// (Ctrl+S, for example) are still reported unhandled by the render process and
+        /// forwarded back to the Qt parent chain, so host QActions on those keep firing.
+        EditorFirst,
+    };
+    Q_ENUM(ShortcutPolicy)
+
+    /**
      * @brief Constructs the widget and begins loading Monaco asynchronously.
      *
      * The editor is not usable immediately; the API becomes live once editorReady()
@@ -124,6 +150,26 @@ public:
      */
     int cursorColumn() const;
 
+    /**
+     * @brief Chooses who wins chords claimed by both a host QAction and the editor.
+     *
+     * Takes effect immediately and applies to every subsequent key press; unlike the
+     * other setters it does not need the editor to be loaded.
+     *
+     * @param policy The arbitration policy; see ShortcutPolicy for what each one does.
+     * @note This governs the **Qt-side** arbitration only -- whether a chord is delivered
+     *       to the web page at all. It does not add, remove or rebind anything inside
+     *       Monaco, and it has no say over chords Chromium handles natively once the key
+     *       has reached the page.
+     */
+    void setShortcutPolicy(ShortcutPolicy policy);
+
+    /**
+     * @brief Returns the current shortcut arbitration policy.
+     * @return The active policy; ShortcutPolicy::QtDefault unless it has been changed.
+     */
+    ShortcutPolicy shortcutPolicy() const;
+
 signals:
     /**
      * @brief Emitted once when Monaco has finished loading and the API is live.
@@ -146,7 +192,19 @@ signals:
      */
     void cursorPositionChanged(int line, int column);
 
+protected:
+    /**
+     * @brief Applies the shortcut policy to QEvent::ShortcutOverride on the web view.
+     *
+     * Reimplemented to arbitrate shortcuts; it does not filter anything else. Subclasses
+     * that reimplement it must call this base implementation for events they do not
+     * consume, or setShortcutPolicy() stops having any effect.
+     */
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
+    /// Installs the shortcut filter on @p target and everything currently below it.
+    void watchForShortcuts(QObject *target);
     /// Extracts the bundled web assets from the qrc into a temp dir for loading.
     void extractResources();
     /// Returns the per-build temp directory holding the extracted web assets.
@@ -158,6 +216,7 @@ private:
     QWebChannel *m_channel = nullptr;
     MonacoBridge *m_bridge = nullptr;
     bool m_ready = false;  ///< True once editorReady() has fired; gates all API calls.
+    ShortcutPolicy m_shortcutPolicy = ShortcutPolicy::QtDefault;
 };
 
 #endif // QMONACOEDITOR_H

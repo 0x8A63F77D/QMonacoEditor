@@ -2,6 +2,8 @@
 #include "MonacoBridge.h"
 
 #include <QVBoxLayout>
+#include <QChildEvent>
+#include <QEvent>
 #include <QWebEngineView>
 #include <QWebEnginePage>
 #include <QWebChannel>
@@ -31,6 +33,7 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
 
     m_webView = new QWebEngineView(this);
     layout->addWidget(m_webView);
+    watchForShortcuts(m_webView);
 
     m_bridge = new MonacoBridge(this);
     m_channel = new QWebChannel(this);
@@ -57,6 +60,59 @@ QMonacoEditor::QMonacoEditor(QWidget *parent)
 }
 
 QMonacoEditor::~QMonacoEditor() = default;
+
+void QMonacoEditor::setShortcutPolicy(ShortcutPolicy policy) {
+    m_shortcutPolicy = policy;
+}
+
+QMonacoEditor::ShortcutPolicy QMonacoEditor::shortcutPolicy() const {
+    return m_shortcutPolicy;
+}
+
+void QMonacoEditor::watchForShortcuts(QObject *target) {
+    if (!target) {
+        return;
+    }
+    target->installEventFilter(this);
+    const QObjectList children = target->children();
+    for (QObject *child : children) {
+        watchForShortcuts(child);
+    }
+}
+
+bool QMonacoEditor::eventFilter(QObject *watched, QEvent *event) {
+    // ShortcutOverride is delivered to the focus widget, which for a loaded page is the
+    // view's focus proxy -- a QQuickWidget the render process creates *after* the
+    // QWebEngineView exists, and replaces on things like a render-process crash. Rather
+    // than resolve focusProxy() once and hope, the filter follows the subtree: every
+    // new object below the view gets watched as it is parented, so whichever widget
+    // ends up being the focus proxy is covered. ChildAdded reaches us because its
+    // receiver is the new object's parent, which we are already watching.
+    if (event->type() == QEvent::ChildAdded) {
+        watchForShortcuts(static_cast<QChildEvent *>(event)->child());
+        return false;
+    }
+
+    if (event->type() == QEvent::ShortcutOverride
+        && m_shortcutPolicy != ShortcutPolicy::QtDefault) {
+        if (m_shortcutPolicy == ShortcutPolicy::HostShortcutsWin) {
+            // Leaving the event unaccepted is what makes the host win: QApplication
+            // keeps walking the parent chain and finally triggers the QAction. Consuming
+            // it here (returning true) is what denies the web view its chance to accept.
+            event->ignore();
+        } else {
+            // EditorFirst: accepting stops the walk, so no QAction triggers and the chord
+            // is re-delivered as a plain key press to the page. Chords Monaco does not
+            // bind come back out through WebEngine's unhandled-key path, which hands them
+            // to this widget's *parent* -- outside the subtree filtered here, so host
+            // QActions on those still fire.
+            event->accept();
+        }
+        return true;
+    }
+
+    return QWidget::eventFilter(watched, event);
+}
 
 void QMonacoEditor::setText(const QString &text) {
     if (m_ready) {
