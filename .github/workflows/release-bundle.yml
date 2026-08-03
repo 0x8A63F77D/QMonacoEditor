@@ -1,0 +1,85 @@
+name: Release frontend bundle
+
+# Produces the prebuilt Monaco frontend bundle that consumers point
+# QMONACO_PREBUILT_RESOURCES at, so that building QMonacoEditor does not require
+# Node.js/npm on their machine. Publishing a release attaches the bundle to it;
+# the manual trigger builds the same bundle as a workflow artifact, which makes
+# the packaging step exercisable without cutting a release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    # ubuntu-latest, unlike ci.yml's windows-latest: this job builds only the
+    # Monaco frontend -- plain Node/vite output, with no Qt, no MSVC and nothing
+    # platform-specific in it -- and the resulting bundle is consumed on every
+    # platform alike. Linux runners start faster and are cheaper, so building it
+    # on Windows would buy nothing.
+    runs-on: ubuntu-latest
+    permissions:
+      # gh release upload writes to the release. Only the release-triggered path
+      # needs this; the manual path just uploads a workflow artifact.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Node version as ci.yml, so the bundle matches what CI builds.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Determine bundle version
+        id: version
+        # Release runs are named after the tag, manual runs after the commit, so
+        # a hand-triggered bundle can never be mistaken for a released one.
+        # Values come in through env rather than ${{ }} inside the script: a tag
+        # name is attacker-influenced text in the general case, and expanding it
+        # into the shell source would make it executable.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            echo "version=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package resources
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        # Zipped from inside resources/, so index.html lands at the archive root
+        # -- exactly the layout src/CMakeLists.txt accepts when extracting a
+        # bundle. The explicit test guards against packaging an empty directory
+        # should the vite build ever change its output location.
+        run: |
+          test -f resources/index.html
+          name="qmonacoeditor-resources-${VERSION}.zip"
+          (cd resources && zip -r -q "${GITHUB_WORKSPACE}/${name}" .)
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bundle as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: ${{ steps.package.outputs.name }}
+          if-no-files-found: error
+
+      - name: Attach bundle to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          ASSET: ${{ steps.package.outputs.name }}
+        # --clobber so re-running the job on an existing release replaces the
+        # asset instead of failing.
+        run: gh release upload "$TAG_NAME" "$ASSET" --clobber

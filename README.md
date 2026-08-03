@@ -54,7 +54,8 @@ The per-file breakdown, the trimming details, and the commands used are in
 
 - Qt 6 with the Widgets, WebEngineWidgets, and WebChannel modules
 - CMake 3.19+
-- Node.js / npm (used at build time to bundle the Monaco frontend)
+- Node.js / npm (used at build time to bundle the Monaco frontend) — not needed
+  if you supply a [prebuilt bundle](#building-without-nodejs--npm)
 - A C++17 compiler
 
 ## Building
@@ -98,9 +99,46 @@ Two things to keep in mind when consuming the library:
 
 - Node.js / npm must be on `PATH` when the *consuming* project is configured.
   The Monaco frontend is bundled during the consumer's build, so a missing
-  `npm` aborts configuration.
+  `npm` aborts configuration — unless you supply a prebuilt bundle, as below.
 - The Ninja and Visual Studio (MSBuild) generators are both exercised on
   Windows; Ninja is additionally covered by CI.
+
+### Building without Node.js / npm
+
+Each published release carries a `qmonacoeditor-resources-<version>.zip` asset:
+the Monaco frontend, already bundled. Point `QMONACO_PREBUILT_RESOURCES` at it
+and the build uses those files as-is — npm is neither looked for nor invoked, so
+it does not have to be installed at all:
+
+```bash
+cmake -B build -S . -DQMONACO_PREBUILT_RESOURCES=/abs/path/to/qmonacoeditor-resources-v0.1.0.zip
+```
+
+The value may be either:
+
+- an **archive** (`.zip`, `.tar.gz`, …), extracted into the build tree during
+  configuration — its files must sit at the archive root, not inside a wrapping
+  directory; or
+- a **directory** holding the bundle — for instance the `resources/` directory
+  left behind by a normal npm build, which you can copy from one machine to
+  another.
+
+Either way the path must contain `index.html`; if it does not, configuration
+stops with a message saying so rather than producing a library that fails at
+runtime. A relative path on the `cmake` command line is resolved against the
+directory you run `cmake` from, as with any other CMake `PATH` variable.
+
+When consuming via `FetchContent`, set the variable before
+`FetchContent_MakeAvailable`, using an **absolute** path:
+
+```cmake
+set(QMONACO_PREBUILT_RESOURCES "D:/bundles/qmonacoeditor-resources-v0.1.0.zip")
+FetchContent_MakeAvailable(QMonacoEditor)
+```
+
+Note that the bundle is tied to the release it ships with. When you fetch `main`
+or another commit, the frontend is not guaranteed to match the C++ side, so the
+npm build remains the supported path there.
 
 Then use the widget like any other `QWidget`:
 
