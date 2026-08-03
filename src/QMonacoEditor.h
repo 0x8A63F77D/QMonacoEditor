@@ -205,6 +205,8 @@ protected:
 private:
     /// Installs the shortcut filter on @p target and everything currently below it.
     void watchForShortcuts(QObject *target);
+    /// True if @p object is the web view or currently sits below it in the object tree.
+    bool isInsideWebView(const QObject *object) const;
     /// Extracts the bundled web assets from the qrc into a temp dir for loading.
     void extractResources();
     /// Returns the per-build temp directory holding the extracted web assets.

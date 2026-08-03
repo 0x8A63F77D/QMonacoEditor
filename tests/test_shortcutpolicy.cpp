@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QEventLoop>
 #include <QKeySequence>
+#include <QLineEdit>
 #include <QMainWindow>
 #include <QTimer>
 #include <QWebEngineView>
@@ -41,6 +42,7 @@ private slots:
     void hostShortcutsWinTakesEvenEditingChords();
     void editorFirstTakesFindAwayFromTheHost();
     void editorFirstStillFallsBackToHostForUnboundChords();
+    void policyDoesNotGovernWidgetsReparentedOutOfTheView();
 
 private:
     /// The widget that actually receives ShortcutOverride: the view's focus proxy.
@@ -255,6 +257,28 @@ void TestShortcutPolicy::editorFirstStillFallsBackToHostForUnboundChords() {
     QTest::keyClick(keyTarget(), Qt::Key_S, Qt::ControlModifier);
     QTRY_COMPARE(saveSpy.count(), 1);
     QCOMPARE(m_editor->text(), QStringLiteral("alpha"));
+}
+
+void TestShortcutPolicy::policyDoesNotGovernWidgetsReparentedOutOfTheView() {
+    auto *view = m_editor->findChild<QWebEngineView *>();
+    QVERIFY(view != nullptr);
+
+    // A widget born below the web view gets the shortcut filter installed on it. An
+    // installed event filter does not come off by itself when the widget is later
+    // reparented elsewhere, so the policy must not keep governing it: it is no longer
+    // part of the editor, and host shortcuts there have to behave normally.
+    auto *stray = new QLineEdit(view);
+    stray->setParent(m_window);
+    stray->show();
+    stray->setFocus();
+    QTRY_COMPARE(QApplication::focusWidget(), stray);
+
+    m_editor->setShortcutPolicy(QMonacoEditor::ShortcutPolicy::EditorFirst);
+    QSignalSpy findSpy(m_findAction, &QAction::triggered);
+    QTest::keyClick(keyTarget(), Qt::Key_F, Qt::ControlModifier);
+    QTRY_COMPARE(findSpy.count(), 1);
+
+    delete stray;
 }
 
 QTEST_MAIN(TestShortcutPolicy)

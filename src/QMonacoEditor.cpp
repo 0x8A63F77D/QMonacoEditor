@@ -80,6 +80,15 @@ void QMonacoEditor::watchForShortcuts(QObject *target) {
     }
 }
 
+bool QMonacoEditor::isInsideWebView(const QObject *object) const {
+    for (const QObject *o = object; o; o = o->parent()) {
+        if (o == m_webView) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool QMonacoEditor::eventFilter(QObject *watched, QEvent *event) {
     // ShortcutOverride is delivered to the focus widget, which for a loaded page is the
     // view's focus proxy -- a QQuickWidget the render process creates *after* the
@@ -93,8 +102,13 @@ bool QMonacoEditor::eventFilter(QObject *watched, QEvent *event) {
         return false;
     }
 
+    // Being watched is not the same as being part of the editor: a child can be
+    // reparented out of the view after the filter was installed, and an installed
+    // filter does not follow it back off. The policy therefore keys off where the
+    // object sits *now*, so it can never govern a widget outside the editor.
     if (event->type() == QEvent::ShortcutOverride
-        && m_shortcutPolicy != ShortcutPolicy::QtDefault) {
+        && m_shortcutPolicy != ShortcutPolicy::QtDefault
+        && isInsideWebView(watched)) {
         if (m_shortcutPolicy == ShortcutPolicy::HostShortcutsWin) {
             // Leaving the event unaccepted is what makes the host win: QApplication
             // keeps walking the parent chain and finally triggers the QAction. Consuming
