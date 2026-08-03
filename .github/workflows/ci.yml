@@ -24,7 +24,8 @@ jobs:
           cache: true
 
       # Ninja rather than the default Visual Studio generator: single-config and
-      # faster on CI. The MSBuild generator is verified locally (see #9).
+      # faster on CI, so this is the job that also runs the tests. The MSBuild
+      # generator is covered by the build-msbuild job below.
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -40,3 +41,47 @@ jobs:
           # No GPU on CI runners; software rendering keeps QtWebEngine alive.
           QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
         run: ctest --output-on-failure --timeout 300
+
+  # Ninja runs every COMMAND of an add_custom_command as its own `cmd /C`
+  # invocation; MSBuild writes them all into one batch file. That difference is
+  # what broke the frontend build for consumers in #9, so the MSBuild path needs
+  # its own gate. Build only, no ctest: the Ninja job already covers behaviour,
+  # and this job exists to catch generator-specific build breakage.
+  build-msbuild:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: win64_msvc2022_64
+          modules: qtwebengine qtwebchannel qtpositioning
+          cache: true
+
+      # No -G and no msvc-dev-cmd here: CMake defaults to the newest Visual
+      # Studio generator installed on the runner, and MSBuild locates the
+      # toolchain itself. Not pinning a VS version keeps this working when the
+      # runner image moves on.
+      - name: Configure
+        run: cmake -B build -S . -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+
+      # The whole point of this job is the MSBuild generator. If the default
+      # ever stopped being one, the job would silently degrade into a duplicate
+      # of the Ninja build instead of failing.
+      - name: Verify the Visual Studio generator was selected
+        run: |
+          $entry = Get-Content build/CMakeCache.txt | Where-Object { $_ -like 'CMAKE_GENERATOR:INTERNAL=*' }
+          $generator = $entry -replace '^CMAKE_GENERATOR:INTERNAL=', ''
+          Write-Host "Generator: $generator"
+          if ($generator -notlike 'Visual Studio *') {
+            throw "Expected a Visual Studio generator, got '$generator'"
+          }
+
+      - name: Build
+        run: cmake --build build --config Release
