@@ -28,29 +28,30 @@ if(PREBUILT_ARCHIVE)
         file(READ "${HASH_FILE}" EXTRACTED_HASH)
     endif()
     if(NOT EXISTS "${RESOURCES_DIR}/index.html" OR NOT EXTRACTED_HASH STREQUAL ARCHIVE_HASH)
-        # Checked before unpacking, because unpacking cannot report this itself:
-        # file(ARCHIVE_EXTRACT) prints "Truncated tar archive" on a damaged or
-        # half-downloaded archive and then carries on, leaving a partial payload
-        # that still has an index.html -- a library that builds cleanly around a
-        # broken frontend. Listing the archive does surface the damage as a
-        # non-zero result.
+        # Unpacked through execute_process rather than file(ARCHIVE_EXTRACT) for
+        # one reason: its diagnostics can be read. Damage is reported on stderr
+        # while the exit status stays 0, and it takes more than one form -- a
+        # truncated archive stops partway, and a zip whose entry data is corrupt
+        # but whose directory is intact unpacks every file with one of them
+        # silently wrong ("ZIP bad CRC"). Listing the archive first does not
+        # cover the second case, because listing only reads the directory. So
+        # any diagnostic at all is treated as a failure.
+        file(REMOVE_RECURSE "${RESOURCES_DIR}")
+        file(MAKE_DIRECTORY "${RESOURCES_DIR}")
         execute_process(
-            COMMAND ${CMAKE_COMMAND} -E tar tf "${PREBUILT_ARCHIVE}"
-            RESULT_VARIABLE ARCHIVE_LIST_RESULT
-            OUTPUT_QUIET
-            ERROR_VARIABLE ARCHIVE_LIST_ERROR
+            COMMAND ${CMAKE_COMMAND} -E tar xf "${PREBUILT_ARCHIVE}"
+            WORKING_DIRECTORY "${RESOURCES_DIR}"
+            RESULT_VARIABLE UNPACK_RESULT
+            ERROR_VARIABLE UNPACK_ERROR
         )
-        if(NOT ARCHIVE_LIST_RESULT EQUAL 0)
+        if(NOT UNPACK_RESULT EQUAL 0 OR NOT UNPACK_ERROR STREQUAL "")
             message(FATAL_ERROR
-                "QMonacoEditor: '${PREBUILT_ARCHIVE}' could not be read as an "
-                "archive -- it looks damaged or incompletely downloaded. "
-                "${ARCHIVE_LIST_ERROR}")
+                "QMonacoEditor: '${PREBUILT_ARCHIVE}' did not unpack cleanly -- "
+                "it looks damaged or incompletely downloaded. ${UNPACK_ERROR}")
         endif()
 
-        file(REMOVE_RECURSE "${RESOURCES_DIR}")
-        file(ARCHIVE_EXTRACT INPUT "${PREBUILT_ARCHIVE}" DESTINATION "${RESOURCES_DIR}")
         # Recorded only now: an abort above must leave the previous hash in
-        # place, so the next build retries instead of trusting a partial unpack.
+        # place, so the next build retries instead of trusting a bad unpack.
         file(WRITE "${HASH_FILE}" "${ARCHIVE_HASH}")
     endif()
 endif()
