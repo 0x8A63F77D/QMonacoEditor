@@ -171,6 +171,19 @@ foreach(FILE IN LISTS RESOURCE_FILES)
             "cannot tell apart from a list separator. Move the bundle to a path "
             "without semicolons.")
     endif()
+    # The archive branch refuses link members, but a directory bundle reaches
+    # here without ever having been an archive -- and unpacking one elsewhere,
+    # then pointing at the result, would otherwise walk straight around that
+    # check. A link is read through by both the hash below and rcc, so it would
+    # quietly pull whatever it points at into the library.
+    if(IS_SYMLINK "${FILE}")
+        message(FATAL_ERROR
+            "QMonacoEditor: '${FILE}' is a symbolic link. A frontend bundle "
+            "must contain only regular files, since anything it links to would "
+            "be embedded into the library. Replace the link with the file "
+            "itself, or point QMONACO_PREBUILT_RESOURCES at a bundle without "
+            "links.")
+    endif()
     file(SHA256 "${FILE}" FILE_HASH)
     string(APPEND PAYLOAD_FINGERPRINT "${FILE}:${FILE_HASH}\n")
 endforeach()
