@@ -89,14 +89,27 @@ file(GLOB_RECURSE RESOURCE_FILES "${RESOURCES_DIR}/*")
 # contents is therefore part of the document, so "same text" really does mean
 # "same bytes to embed".
 set(PAYLOAD_FINGERPRINT "")
-foreach(FILE ${RESOURCE_FILES})
+foreach(FILE IN LISTS RESOURCE_FILES)
+    # A ";" anywhere in the payload's path is unrecoverable here: file(GLOB) hands
+    # back a plain CMake list, and a semicolon inside a name is indistinguishable
+    # from the separator between two names by the time we see it -- iterating IN
+    # LISTS does not help, because the damage happened in the glob. The symptom
+    # would otherwise be file(SHA256) failing on a truncated path, so say what is
+    # actually wrong instead.
+    if(NOT EXISTS "${FILE}")
+        message(FATAL_ERROR
+            "QMonacoEditor: '${FILE}' does not exist. This usually means the "
+            "bundle's path or one of its file names contains a ';', which CMake "
+            "cannot tell apart from a list separator. Move the bundle to a path "
+            "without semicolons.")
+    endif()
     file(SHA256 "${FILE}" FILE_HASH)
     string(APPEND PAYLOAD_FINGERPRINT "${FILE}:${FILE_HASH}\n")
 endforeach()
 string(SHA256 PAYLOAD_HASH "${PAYLOAD_FINGERPRINT}")
 
 set(QRC_CONTENT "<RCC>\n  <!-- payload ${PAYLOAD_HASH} -->\n  <qresource prefix=\"/qmonacoeditor\">\n")
-foreach(FILE ${RESOURCE_FILES})
+foreach(FILE IN LISTS RESOURCE_FILES)
     file(RELATIVE_PATH REL_PATH "${RESOURCES_DIR}" "${FILE}")
     # A prebuilt bundle may sit anywhere the consumer likes, including a path
     # holding XML metacharacters (D:/R&D/bundle); left as-is they make rcc
@@ -141,6 +154,18 @@ if(QMONACO_PREBUILT_RESOURCES)
     # A bundle was handed to us, so nothing here may need Node.js: this branch
     # deliberately contains no find_program(npm) and no vite command. That is
     # the whole point of the option -- consumers without npm can still build.
+    # Refused up front, because a semicolon cannot survive being carried in a
+    # CMake variable: the value is already a two-element list by the time it
+    # arrives here, and every later step -- the cache entry, the -D handed to the
+    # generator, the glob of the payload -- would compound the confusion. Saying
+    # so plainly beats a downstream "does not exist" naming a path nobody passed.
+    if(QMONACO_PREBUILT_RESOURCES MATCHES ";")
+        message(FATAL_ERROR
+            "QMONACO_PREBUILT_RESOURCES contains a ';', which CMake cannot tell "
+            "apart from a list separator: '${QMONACO_PREBUILT_RESOURCES}'. Move "
+            "the bundle to a path without semicolons.")
+    endif()
+
     # Not file(TO_CMAKE_PATH): that reads its input as a native *search path* and
     # splits it on the platform's separator, so a perfectly valid POSIX bundle at
     # /tmp/bundle:v1 would come apart into a two-element list and then fail to

@@ -85,5 +85,7 @@ jobs:
           TAG_NAME: ${{ github.event.release.tag_name }}
           ASSET: ${{ steps.package.outputs.name }}
         # --clobber so re-running the job on an existing release replaces the
-        # asset instead of failing.
-        run: gh release upload "$TAG_NAME" "$ASSET" --clobber
+        # asset instead of failing. It precedes "--" because everything after
+        # that is positional: a tag is only constrained by git's ref rules, and
+        # one starting with "-" would otherwise be read as a flag.
+        run: gh release upload --clobber -- "$TAG_NAME" "$ASSET"
