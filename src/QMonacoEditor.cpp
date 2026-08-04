@@ -224,19 +224,38 @@ int QMonacoEditor::cursorColumn() const {
 }
 
 QString QMonacoEditor::resourceDir() const {
-    // The cache key is a hash of the resource *paths*, not contents. This is only
-    // correct because Vite emits content-hashed filenames: any frontend change renames
-    // a file, which changes the path list and thus the target directory.
-    QByteArray hash;
-    QDirIterator it(":/qmonacoeditor", QDirIterator::Subdirectories);
-    QCryptographicHash hasher(QCryptographicHash::Md5);
-    while (it.hasNext()) {
-        hasher.addData(it.next().toUtf8());
-    }
-    hash = hasher.result().toHex().left(8);
+    // The cache key covers the resource paths *and* their contents, because
+    // extractResources() below treats an existing directory as up to date.
+    //
+    // Paths alone sufficed while the frontend could only come from this
+    // repository's Vite build, whose filenames carry a content hash: any change
+    // renamed a file and so changed the key. A bundle supplied through
+    // QMONACO_PREBUILT_RESOURCES carries no such guarantee, and a change
+    // confined to a stable-named file -- index.html above all -- would leave the
+    // key untouched and keep a previously extracted frontend in service.
+    // Computed once for the process. The payload is compiled into the binary, so
+    // it cannot change while the program runs, whereas the hash walks the whole
+    // frontend (~21 MB) -- and this is called more than once per editor, on the
+    // GUI thread. Function-local static initialisation is thread-safe.
+    static const QString cached = [] {
+        QCryptographicHash hasher(QCryptographicHash::Md5);
+        QDirIterator it(":/qmonacoeditor", QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            hasher.addData(path.toUtf8());
+            // Directories, and anything unreadable, contribute their path only.
+            QFile file(path);
+            if (file.open(QIODevice::ReadOnly)) {
+                hasher.addData(&file);
+            }
+        }
+        const QByteArray hash = hasher.result().toHex().left(8);
 
-    return QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-           + "/qmonacoeditor/" + QString::fromLatin1(hash);
+        return QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+               + "/qmonacoeditor/" + QString::fromLatin1(hash);
+    }();
+
+    return cached;
 }
 
 void QMonacoEditor::extractResources() {
