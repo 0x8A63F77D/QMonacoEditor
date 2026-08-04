@@ -28,8 +28,29 @@ if(PREBUILT_ARCHIVE)
         file(READ "${HASH_FILE}" EXTRACTED_HASH)
     endif()
     if(NOT EXISTS "${RESOURCES_DIR}/index.html" OR NOT EXTRACTED_HASH STREQUAL ARCHIVE_HASH)
+        # Checked before unpacking, because unpacking cannot report this itself:
+        # file(ARCHIVE_EXTRACT) prints "Truncated tar archive" on a damaged or
+        # half-downloaded archive and then carries on, leaving a partial payload
+        # that still has an index.html -- a library that builds cleanly around a
+        # broken frontend. Listing the archive does surface the damage as a
+        # non-zero result.
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E tar tf "${PREBUILT_ARCHIVE}"
+            RESULT_VARIABLE ARCHIVE_LIST_RESULT
+            OUTPUT_QUIET
+            ERROR_VARIABLE ARCHIVE_LIST_ERROR
+        )
+        if(NOT ARCHIVE_LIST_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "QMonacoEditor: '${PREBUILT_ARCHIVE}' could not be read as an "
+                "archive -- it looks damaged or incompletely downloaded. "
+                "${ARCHIVE_LIST_ERROR}")
+        endif()
+
         file(REMOVE_RECURSE "${RESOURCES_DIR}")
         file(ARCHIVE_EXTRACT INPUT "${PREBUILT_ARCHIVE}" DESTINATION "${RESOURCES_DIR}")
+        # Recorded only now: an abort above must leave the previous hash in
+        # place, so the next build retries instead of trusting a partial unpack.
         file(WRITE "${HASH_FILE}" "${ARCHIVE_HASH}")
     endif()
 endif()
@@ -113,7 +134,15 @@ if(QMONACO_PREBUILT_RESOURCES)
     # A bundle was handed to us, so nothing here may need Node.js: this branch
     # deliberately contains no find_program(npm) and no vite command. That is
     # the whole point of the option -- consumers without npm can still build.
-    file(TO_CMAKE_PATH "${QMONACO_PREBUILT_RESOURCES}" PREBUILT_PATH)
+    # Not file(TO_CMAKE_PATH): that reads its input as a native *search path* and
+    # splits it on the platform's separator, so a perfectly valid POSIX bundle at
+    # /tmp/bundle:v1 would come apart into a two-element list and then fail to
+    # exist. Only Windows needs any conversion, and only there is a backslash
+    # guaranteed not to be part of a filename.
+    set(PREBUILT_PATH "${QMONACO_PREBUILT_RESOURCES}")
+    if(CMAKE_HOST_WIN32)
+        string(REPLACE "\\" "/" PREBUILT_PATH "${PREBUILT_PATH}")
+    endif()
 
     # Relative values that arrive through the cache (-D..., or a set(CACHE PATH)
     # in consumer code) never reach this check -- CMake absolutises PATH-typed
