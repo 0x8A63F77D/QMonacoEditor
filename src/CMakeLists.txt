@@ -62,6 +62,40 @@ if(PREBUILT_ARCHIVE)
             endif()
         endforeach()
 
+        # Names alone are not enough, because a member can be a *symlink* and a
+        # later member can then be written through it: "link" and "link/pwn"
+        # both look innocent in a name listing while the first points anywhere
+        # on the host. A verbose listing exposes the member type in its first
+        # column, so anything that is not a regular file or a directory is
+        # refused -- that also rules out a lone symlink, whose target would
+        # otherwise be read and embedded into the library.
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E tar tvf "${PREBUILT_ARCHIVE}"
+            OUTPUT_VARIABLE ARCHIVE_DETAIL
+            ERROR_VARIABLE DETAIL_ERROR
+            RESULT_VARIABLE DETAIL_RESULT
+        )
+        if(NOT DETAIL_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "QMonacoEditor: '${PREBUILT_ARCHIVE}' could not be read as an "
+                "archive. ${DETAIL_ERROR}")
+        endif()
+        string(REPLACE "\r" "" ARCHIVE_DETAIL "${ARCHIVE_DETAIL}")
+        string(REPLACE "\n" ";" ARCHIVE_DETAIL "${ARCHIVE_DETAIL}")
+        foreach(ENTRY IN LISTS ARCHIVE_DETAIL)
+            if(ENTRY STREQUAL "")
+                continue()
+            endif()
+            string(SUBSTRING "${ENTRY}" 0 1 ENTRY_TYPE)
+            if(NOT ENTRY_TYPE STREQUAL "-" AND NOT ENTRY_TYPE STREQUAL "d")
+                message(FATAL_ERROR
+                    "QMonacoEditor: '${PREBUILT_ARCHIVE}' contains a member "
+                    "that is neither a regular file nor a directory, and could "
+                    "redirect the unpack outside the build directory: "
+                    "'${ENTRY}'. Refusing to unpack this archive.")
+            endif()
+        endforeach()
+
         # Unpacked through execute_process rather than file(ARCHIVE_EXTRACT) for
         # one reason: its diagnostics can be read. Damage is reported on stderr
         # while the exit status stays 0, and it takes more than one form -- a
