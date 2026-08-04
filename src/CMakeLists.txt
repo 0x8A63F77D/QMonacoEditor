@@ -28,6 +28,40 @@ if(PREBUILT_ARCHIVE)
         file(READ "${HASH_FILE}" EXTRACTED_HASH)
     endif()
     if(NOT EXISTS "${RESOURCES_DIR}/index.html" OR NOT EXTRACTED_HASH STREQUAL ARCHIVE_HASH)
+        # Member names are checked before a single byte is written. Unpacking
+        # honours whatever names the archive carries: an entry called
+        # "../escaped.txt" is written outside the destination, with exit status
+        # 0 and nothing on stderr. A bundle is data from somewhere else -- a
+        # release asset, a copy from a colleague -- so it does not get to choose
+        # where on the build host it lands.
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E tar tf "${PREBUILT_ARCHIVE}"
+            OUTPUT_VARIABLE ARCHIVE_MEMBERS
+            ERROR_VARIABLE LIST_ERROR
+            RESULT_VARIABLE LIST_RESULT
+        )
+        if(NOT LIST_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "QMonacoEditor: '${PREBUILT_ARCHIVE}' could not be read as an "
+                "archive. ${LIST_ERROR}")
+        endif()
+        string(REPLACE "\r" "" ARCHIVE_MEMBERS "${ARCHIVE_MEMBERS}")
+        string(REPLACE "\n" ";" ARCHIVE_MEMBERS "${ARCHIVE_MEMBERS}")
+        foreach(MEMBER IN LISTS ARCHIVE_MEMBERS)
+            if(MEMBER STREQUAL "")
+                continue()
+            endif()
+            string(REPLACE "\\" "/" MEMBER_PATH "${MEMBER}")
+            if(IS_ABSOLUTE "${MEMBER_PATH}"
+               OR MEMBER_PATH MATCHES "^[A-Za-z]:"
+               OR MEMBER_PATH MATCHES "(^|/)\\.\\.(/|$)")
+                message(FATAL_ERROR
+                    "QMonacoEditor: '${PREBUILT_ARCHIVE}' contains the entry "
+                    "'${MEMBER}', which would be written outside the build "
+                    "directory. Refusing to unpack this archive.")
+            endif()
+        endforeach()
+
         # Unpacked through execute_process rather than file(ARCHIVE_EXTRACT) for
         # one reason: its diagnostics can be read. Damage is reported on stderr
         # while the exit status stays 0, and it takes more than one form -- a
