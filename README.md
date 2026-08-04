@@ -100,8 +100,8 @@ Two things to keep in mind when consuming the library:
 - Node.js / npm must be on `PATH` when the *consuming* project is configured.
   The Monaco frontend is bundled during the consumer's build, so a missing
   `npm` aborts configuration — unless you supply a prebuilt bundle, as below.
-- The Ninja and Visual Studio (MSBuild) generators are both exercised on
-  Windows; Ninja is additionally covered by CI.
+- The Ninja and Visual Studio (MSBuild) generators are both covered by CI on
+  Windows; the Ninja job additionally runs the test suite.
 
 ### Building without Node.js / npm
 
