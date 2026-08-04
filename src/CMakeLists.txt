@@ -36,6 +36,12 @@ if(PREBUILT_ARCHIVE)
         # silently wrong ("ZIP bad CRC"). Listing the archive first does not
         # cover the second case, because listing only reads the directory. So
         # any diagnostic at all is treated as a failure.
+        # Dropped before the tree is touched, not merely rewritten after: from
+        # here until the unpack succeeds the payload matches no archive at all,
+        # and if the unpack fails that is where it stays. A stale hash left
+        # behind would match again the moment the previous archive was restored,
+        # and the unpack would be skipped over the wreckage of the failed one.
+        file(REMOVE "${HASH_FILE}")
         file(REMOVE_RECURSE "${RESOURCES_DIR}")
         file(MAKE_DIRECTORY "${RESOURCES_DIR}")
         execute_process(
