@@ -38,9 +38,12 @@ endif()
 # replaced after configuration: an archive swapped for a malformed one is
 # unpacked above, and without this the build would happily emit a qrc with no
 # entry point and produce a library whose editors come up blank.
-if(NOT EXISTS "${RESOURCES_DIR}/index.html")
+# IS_DIRECTORY as well as EXISTS: a payload may contain a *directory* named
+# index.html, which passes an existence test while leaving the widget navigating
+# to a directory instead of the entry document -- a blank editor, not an error.
+if(NOT EXISTS "${RESOURCES_DIR}/index.html" OR IS_DIRECTORY "${RESOURCES_DIR}/index.html")
     message(FATAL_ERROR
-        "QMONACO_PREBUILT_RESOURCES: no index.html in '${RESOURCES_DIR}'. "
+        "QMonacoEditor: no index.html file in '${RESOURCES_DIR}'. "
         "Expected a QMonacoEditor frontend bundle -- either the directory "
         "produced by 'npm run build' in web/ (this repository's resources/ "
         "directory), or the qmonacoeditor-resources-<version>.zip asset of a "
@@ -49,7 +52,22 @@ if(NOT EXISTS "${RESOURCES_DIR}/index.html")
 endif()
 
 file(GLOB_RECURSE RESOURCE_FILES "${RESOURCES_DIR}/*")
-set(QRC_CONTENT "<RCC>\n  <qresource prefix=\"/qmonacoeditor\">\n")
+
+# The qrc is written below only when its text differs from the existing one,
+# which is what keeps rcc off the critical path of every build. That makes the
+# text the sole signal that the payload changed -- and file names alone are not
+# that signal: an edit confined to a stable-named file (index.html) changes what
+# must be embedded while leaving every path identical. A fingerprint of the
+# contents is therefore part of the document, so "same text" really does mean
+# "same bytes to embed".
+set(PAYLOAD_FINGERPRINT "")
+foreach(FILE ${RESOURCE_FILES})
+    file(SHA256 "${FILE}" FILE_HASH)
+    string(APPEND PAYLOAD_FINGERPRINT "${FILE}:${FILE_HASH}\n")
+endforeach()
+string(SHA256 PAYLOAD_HASH "${PAYLOAD_FINGERPRINT}")
+
+set(QRC_CONTENT "<RCC>\n  <!-- payload ${PAYLOAD_HASH} -->\n  <qresource prefix=\"/qmonacoeditor\">\n")
 foreach(FILE ${RESOURCE_FILES})
     file(RELATIVE_PATH REL_PATH "${RESOURCES_DIR}" "${FILE}")
     # A prebuilt bundle may sit anywhere the consumer likes, including a path
@@ -81,6 +99,16 @@ file(REMOVE "${QRC_FILE}.tmp")
 # Both branches must leave the same two variables behind: RESOURCES_DIR (the
 # directory whose contents become the qrc payload) and QRC_INPUT_DEPENDS (what
 # the qrc must be regenerated after).
+#
+# Cleared first, not merely assigned in the branch that needs them: under
+# add_subdirectory/FetchContent this scope inherits the parent's variables, so
+# an unrelated variable of the same name in the consumer's project would
+# otherwise be read here as ours. For the archive that is not just wrong but
+# destructive -- the generator wipes RESOURCES_DIR and unpacks whatever it was
+# handed, over a payload that may be the consumer's own bundle directory.
+set(QMONACO_PREBUILT_ARCHIVE "")
+set(QMONACO_QRC_ALWAYS_REGENERATE "")
+
 if(QMONACO_PREBUILT_RESOURCES)
     # A bundle was handed to us, so nothing here may need Node.js: this branch
     # deliberately contains no find_program(npm) and no vite command. That is
@@ -103,7 +131,7 @@ if(QMONACO_PREBUILT_RESOURCES)
         set(RESOURCES_DIR "${PREBUILT_PATH}")
     elseif(EXISTS "${PREBUILT_PATH}")
         set(RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuilt-resources")
-        set(PREBUILT_ARCHIVE "${PREBUILT_PATH}")
+        set(QMONACO_PREBUILT_ARCHIVE "${PREBUILT_PATH}")
     else()
         message(FATAL_ERROR
             "QMONACO_PREBUILT_RESOURCES points at '${PREBUILT_PATH}', which "
@@ -119,7 +147,7 @@ if(QMONACO_PREBUILT_RESOURCES)
         COMMAND ${CMAKE_COMMAND}
             "-DRESOURCES_DIR=${RESOURCES_DIR}"
             "-DQRC_FILE=${QRC_FILE}"
-            "-DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}"
+            "-DPREBUILT_ARCHIVE=${QMONACO_PREBUILT_ARCHIVE}"
             -P "${GENERATE_QRC_SCRIPT}"
         RESULT_VARIABLE PREPARE_RESULT
     )
@@ -136,7 +164,7 @@ if(QMONACO_PREBUILT_RESOURCES)
     # once a globbed asset is renamed away. So the qrc rule below is instead made
     # to run on every build and read the payload afresh -- see step 2.
     set(QRC_INPUT_DEPENDS "")
-    set(QRC_ALWAYS_REGENERATE "${CMAKE_CURRENT_BINARY_DIR}/regenerate_qrc_always")
+    set(QMONACO_QRC_ALWAYS_REGENERATE "${CMAKE_CURRENT_BINARY_DIR}/regenerate_qrc_always")
 
     message(STATUS "QMonacoEditor: using prebuilt frontend from ${RESOURCES_DIR} (npm not required)")
 else()
@@ -198,15 +226,15 @@ endif()
 # replaces the qrc only when the content differs, so rcc and the recompile below
 # still happen exactly when the frontend really changed.
 if(QMONACO_PREBUILT_RESOURCES)
-    set_source_files_properties("${QRC_ALWAYS_REGENERATE}" PROPERTIES SYMBOLIC TRUE)
+    set_source_files_properties("${QMONACO_QRC_ALWAYS_REGENERATE}" PROPERTIES SYMBOLIC TRUE)
 endif()
 
 add_custom_command(
-    OUTPUT "${QRC_FILE}" ${QRC_ALWAYS_REGENERATE}
+    OUTPUT "${QRC_FILE}" ${QMONACO_QRC_ALWAYS_REGENERATE}
     COMMAND ${CMAKE_COMMAND}
         "-DRESOURCES_DIR=${RESOURCES_DIR}"
         "-DQRC_FILE=${QRC_FILE}"
-        "-DPREBUILT_ARCHIVE=${PREBUILT_ARCHIVE}"
+        "-DPREBUILT_ARCHIVE=${QMONACO_PREBUILT_ARCHIVE}"
         -P "${GENERATE_QRC_SCRIPT}"
     DEPENDS ${QRC_INPUT_DEPENDS}
     # VERBATIM, so CMake escapes these arguments for the native shell instead of
